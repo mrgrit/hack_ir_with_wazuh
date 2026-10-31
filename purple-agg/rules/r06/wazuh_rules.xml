@@ -1,0 +1,47 @@
+<!-- R06 (id 1906xx) — JSON 인증 로그(app/srcuser/result) + 메일 게이트웨이 -->
+<group name="purple,purple_r06,">
+  <rule id="190601" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="app">^webmail$</field>
+    <field name="result">^fail$</field>
+    <description>PURPLE R06: 웹메일 로그인 실패 $(srcuser) from $(srcip)</description>
+    <group>authentication_failed,</group>
+  </rule>
+  <rule id="190602" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="app">^webmail$</field>
+    <field name="result">^success$</field>
+    <description>PURPLE R06: 웹메일 로그인 성공 $(srcuser) from $(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+  <rule id="190603" level="10" frequency="5" timeframe="604800">
+    <if_matched_sid>190601</if_matched_sid>
+    <same_srcuser />
+    <different_srcip />
+    <description>PURPLE R06: 한 계정 $(srcuser) 을 일주일에 서로 다른 IP 5곳이 실패 — 분산 대입(spray)</description>
+    <mitre><id>T1110.003</id></mitre>
+    <group>attack,credential_access,</group>
+  </rule>
+  <rule id="190604" level="13" timeframe="604800">
+    <if_sid>190602</if_sid>
+    <if_matched_sid>190603</if_matched_sid>
+    <same_srcuser />
+    <description>PURPLE R06: 분산 대입 대상 계정 $(srcuser) 의 로그인 성공 — 계정 탈취 의심</description>
+    <mitre><id>T1078</id></mitre>
+    <group>attack,credential_access,</group>
+  </rule>
+  <rule id="190605" level="6">
+    <decoded_as>kt66-mailgw</decoded_as>
+    <field name="direction">^in$</field>
+    <field name="from" type="pcre2">@kt66-[a-z]+\.[a-z]+$</field>
+    <description>PURPLE R06: 회사 도메인을 흉내 낸 발신 도메인 $(from)</description>
+    <mitre><id>T1566.001</id></mitre>
+  </rule>
+  <rule id="190606" level="12" frequency="20" timeframe="600">
+    <if_matched_sid>190605</if_matched_sid>
+    <same_field>from</same_field>
+    <description>PURPLE R06: 유사 도메인 발신자가 10분에 20명 이상에게 발송 — 피싱 캠페인</description>
+    <mitre><id>T1566.001</id></mitre>
+    <group>attack,phishing,</group>
+  </rule>
+</group>

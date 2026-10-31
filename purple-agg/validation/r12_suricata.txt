@@ -1,0 +1,2 @@
+      7 [1:9612001:1] PURPLE R12 AI debug endpoint access
+      9 [1:9612003:1] PURPLE R12 AI server to admin console (tool SSRF)

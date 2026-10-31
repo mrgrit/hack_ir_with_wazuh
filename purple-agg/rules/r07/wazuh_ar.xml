@@ -1,0 +1,12 @@
+<active-response>
+  <command>purple-ar</command>
+  <location>server</location>
+  <rules_id>190702,190703,190706</rules_id>
+</active-response>
+<!-- 190703: bastion 에서 외부 IP 를 1시간 차단 -->
+<active-response>
+  <command>firewall-drop</command>
+  <location>local</location>
+  <rules_id>190703</rules_id>
+  <timeout>3600</timeout>
+</active-response>

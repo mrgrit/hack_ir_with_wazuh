@@ -1,0 +1,47 @@
+title: PURPLE R15 Office Spawns Shell
+name: purple_r15_office_shell
+id: purple-r15-office-shell
+status: experimental
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    parent:
+        ParentImage|endswith:
+            - '\WINWORD.EXE'
+            - '\EXCEL.EXE'
+    child:
+        Image|endswith:
+            - '\powershell.exe'
+            - '\cmd.exe'
+    condition: parent and child
+level: high
+tags:
+    - attack.t1204.002
+---
+title: PURPLE R15 AI Server Calls Export API
+name: purple_r15_export
+id: purple-r15-export
+status: experimental
+logsource:
+    product: apache
+    category: webserver
+detection:
+    selection:
+        msg|re: '^10\.20\.40\.87 .*"GET /api/users/export'
+    condition: selection
+level: high
+---
+title: PURPLE R15 Export Burst - 10 pages in 2 min
+id: purple-r15-export-corr
+status: experimental
+correlation:
+    type: event_count
+    rules:
+        - purple_r15_export
+    timespan: 2m
+    condition:
+        gte: 10
+level: critical
+tags:
+    - attack.t1530

@@ -1,0 +1,4 @@
+# R12 — AI 서비스 (sid 9612xxx)
+alert http any any -> 198.51.100.87 80 (msg:"PURPLE R12 AI debug endpoint access"; flow:established,to_server; http.uri; content:"/api/debug"; startswith; metadata:mitre_technique_id T1190, purple_round R12; classtype:web-application-attack; sid:9612001; rev:1;)
+alert http any any -> 198.51.100.87 80 (msg:"PURPLE R12 prompt injection phrase in chat body"; flow:established,to_server; http.uri; content:"/api/chat"; http.request_body; pcre:"/(ignore (all|previous|prior) instructions|system prompt|developer mode|이전 지시(를|는) 무시)/i"; metadata:mitre_technique_id T1059, purple_round R12; classtype:web-application-attack; sid:9612002; rev:1;)
+alert tcp 10.20.40.87 any -> 10.20.40.86 any (msg:"PURPLE R12 AI server to admin console (tool SSRF)"; flow:to_server; flags:S,12; threshold:type limit, track by_src, count 1, seconds 600; metadata:mitre_technique_id T1090, purple_round R12; classtype:policy-violation; sid:9612003; rev:1;)

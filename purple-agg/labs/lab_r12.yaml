@@ -1,0 +1,587 @@
+lab_id: purple-agg-r12
+title: "퍼플 집계 R12 — AI 서비스 — 챗봇 로그의 이상치"
+version: purple-agg-1
+course: purple-agg
+week: 12
+description: |
+  R12 AI 서비스 공격·방어 — 챗봇 로그에서 '평범한 사용자는 쓰지 않는 것'을 집계로 찾는다.
+
+  Red(로그로만 재현) — 가입 사용자 u7731042, 표적 aicompanion(10.20.40.87)
+    1) D-45~D-4: 프롬프트 인젝션 시도(긴 프롬프트·주입 패턴 표지) — 실제 로그 재방문 패턴
+    2) 도구 남용: 일반 사용자에게 없는 http_fetch·file_read·shell 호출 → http_fetch 로 내부 관리콘솔 SSRF
+    3) /api/debug/* 로 시스템 프롬프트·설정 노출 시도(404 → 200), RAG 문서 업로드로 오염
+  Blue: 도구 분포 → 관리 도구 사용자 → 사용자별 프롬프트 길이 → 표지×차단 → 디버그·업로드 경로 → 동서 연결
+
+  실제 공격은 하지 않는다. 생성기가 만든 로그(정상 99.9% + 공격)를 인덱서에 적재해 집계로 찾고, 같은 판단을 Suricata·ModSecurity·Wazuh·Sigma·osquery 규칙과 모니터로 자동화한 뒤 대응한다. 명령은 한 줄씩 — answer 의 연결 명령은 자동 채점용.
+difficulty: medium
+duration_minutes: 180
+prerequisites:
+  - "kt66 설치·기동 + Wazuh 인덱서 https://10.20.32.110:9200 접근 (admin)"
+  - "~/purple-agg 번들 배치 (README §1~4 최초 설정)"
+  - "jq, python3"
+objectives:
+  - "도구 호출 분포와 관리 도구 사용자를 집계로 찾는다"
+  - "사용자별 최대·평균 프롬프트 길이로 주입 시도자를 찾는다"
+  - "주입 표지×차단 여부, 디버그·업로드 경로, AI 서버의 동서 연결을 확인한다"
+  - "ModSecurity(디버그 숨김·주입 문구·RAG 업로드)·Wazuh JSON 필드 규칙·Sigma 로 자동화한다"
+pass_threshold: 0.7
+steps:
+
+  - order: 1
+    instruction: |2
+      ## 🎯 목표 — 데이터 적재와 정상의 모양 — 챗봇 도구 호출 분포
+      ## 📖 개념 한 줄
+      정상의 크기를 먼저 잰다. 도구 호출의 대부분은 none·search — http_fetch·shell 은 일반 사용자에게 없다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # 1) 인덱서 연결 확인 — 클러스터 이름·버전, 이미 있는 purple-* 인덱스
+      python3 r12_ai_service.py check
+
+      # 2) 로그 생성·적재 — 90일, 엔드포인트 10곳 정상 99.9% + 공격 (실제 공격 없음, 수 분)
+      python3 r12_ai_service.py gen --anchor 2026-11-01
+
+      # 3) 적재 건수 확인 — 총 이벤트 수 | 서로 다른 외부 IP 수 (Q0)
+      python3 r12_ai_service.py ask Q0
+
+      # 4) Dashboard: Stack Management → Index Patterns → purple-* (시간 필드 timestamp) — 있으면 건너뜀
+      # 5) Discover 에서 purple-r12 · 기간 2026-08-01 ~ 2026-11-01 로 맞춘다
+
+      # 6) Q1 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r12_ai_service.py dsl Q1
+
+      # 7) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r12/_search -d @- <<'EOF' | jq -r '.aggregations.tool.buckets[] | "\(.key) | \(.doc_count)"'
+      {"size":0,"query":{"exists":{"field":"data.ai.tool"}},"aggs":{"tool":{"terms":{"field":"data.ai.tool","size":8}}}}
+      EOF
+
+      # 8) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r12_ai_service.py ask Q1
+      ```
+      - 2) 기준일 `2026-11-01` 로 고정해야 정답 키와 숫자가 같다(다른 날짜면 분포는 같고 시각만 밀린다).
+      - 시각화: Split rows: Terms `data.ai.tool` size 8 · 필터 `data.ai.tool:*`
+
+      ## ✅ 합격 기준
+      `none` 출력 시 통과.
+    hint: "gen → ask Q0 → Q1"
+    category: survey
+    points: 10
+    answer: |2
+      # 1) 생성·적재 (기준일 고정)
+      python3 r12_ai_service.py gen --anchor 2026-11-01 >/dev/null && python3 r12_ai_service.py ask Q0
+      # 2) 정상의 모양
+      python3 r12_ai_service.py ask Q1
+    answer_detail: "총 2,445,975건 · 공격 236건 · 정상(배경 포함) 99.990% — 정상이 99.9% 인 데이터에서 '정상의 모양'을 먼저 기록한다. 도구 호출의 대부분은 none·search — http_fetch·shell 은 일반 사용자에게 없다."
+    expected_output: |2
+      # Q0
+      2445975 | 1050494
+      # Q1
+      none | 46954
+      search | 5514
+      calculator | 2224
+      calendar | 1096
+      file_read | 8
+      http_fetch | 6
+      shell | 3
+    verify:
+      type: output_contains
+      expect: "none"
+      field: stdout
+      semantic:
+        intent: "적재 + 정상 기준선"
+        success_criteria: ["인덱스 purple-r12", "Q0 건수", "Q1 분포"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 2
+    instruction: |2
+      ## 🎯 목표 — 관리용 도구(http_fetch·file_read·shell)를 쓴 사용자 · 사용자별 최대·평균 프롬프트 길이 (최대 순 상위 5)
+      ## 📖 개념 한 줄
+      **Q2** 관리 도구를 쓴 사용자 — 한 명이 튄다.
+      **Q3** 프롬프트 길이 최대값 — 정상 사용자는 수백 자, 주입 시도는 수천 자.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # ── Q2 관리용 도구(http_fetch·file_read·shell)를 쓴 사용자 ──
+      # 1) Q2 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r12_ai_service.py dsl Q2
+
+      # 2) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r12/_search -d @- <<'EOF' | jq -r '.aggregations.u.buckets[] | .key as $k | .t.buckets[] | "\($k) | \(.key) | \(.doc_count)"'
+      {"size":0,"query":{"terms":{"data.ai.tool":["http_fetch","file_read","shell"]}},"aggs":{"u":{"terms":{"field":"data.ai.user","size":5},"aggs":{"t":{"terms":{"field":"data.ai.tool","size":3}}}}}}
+      EOF
+
+      # 3) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r12_ai_service.py ask Q2
+
+      # ── Q3 사용자별 최대·평균 프롬프트 길이 (최대 순 상위 5) ──
+      # 4) Q3 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r12_ai_service.py dsl Q3
+
+      # 5) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r12/_search -d @- <<'EOF' | jq -r '.aggregations.u.buckets[] | "\(.key) | \(.doc_count) | \(.mx.value) | \(.av.value|floor)"'
+      {"size":0,"query":{"exists":{"field":"data.ai.tool"}},"aggs":{"u":{"terms":{"field":"data.ai.user","size":5,"order":{"mx":"desc"}},"aggs":{"mx":{"max":{"field":"data.ai.prompt_len"}},"av":{"avg":{"field":"data.ai.prompt_len"}}}}}}
+      EOF
+
+      # 6) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r12_ai_service.py ask Q3
+      ```
+      - Q2 시각화: Split rows: Terms `data.ai.user` size 5 → Split rows: Terms `data.ai.tool` size 3 · 필터 `data.ai.tool:("http_fetch" or "file_read" or "shell")`
+      - Q3 시각화: Split rows: Terms `data.ai.user` size 5 · 정렬 mx desc → Metric: Max `data.ai.prompt_len` → Metric: Average `data.ai.prompt_len` · 필터 `data.ai.tool:*`
+
+      ## ✅ 합격 기준
+      `u7731042` 출력 시 통과.
+    hint: "Q2 / Q3"
+    category: analysis
+    points: 13
+    answer: |2
+      # Q2 관리용 도구(http_fetch·file_read·shell)를 쓴 사용자
+      python3 r12_ai_service.py ask Q2
+      # Q3 사용자별 최대·평균 프롬프트 길이 (최대 순 상위 5)
+      python3 r12_ai_service.py ask Q3
+    answer_detail: "Q2: 관리 도구를 쓴 사용자 — 한 명이 튄다. Q3: 프롬프트 길이 최대값 — 정상 사용자는 수백 자, 주입 시도는 수천 자."
+    expected_output: |2
+      # Q2
+      u7731042 | file_read | 8
+      u7731042 | http_fetch | 6
+      u7731042 | shell | 3
+      # Q3
+      u7731042 | 109 | 6500 | 4324
+      u1057576 | 2 | 1626 | 836
+      u3754153 | 211 | 1394 | 128
+      u3875889 | 7 | 1319 | 294
+      u6982109 | 12 | 1272 | 206
+    verify:
+      type: output_contains
+      expect: "u7731042"
+      field: stdout
+      semantic:
+        intent: "탐지 집계"
+        success_criteria: ["Q2", "Q3"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 3
+    instruction: |2
+      ## 🎯 목표 — 주입 패턴 표지 × 차단 여부 · ai.kt66.lab
+      ## 📖 개념 한 줄
+      **Q4** 주입 표지가 붙었는데 차단되지 않은 요청 — 방어가 놓친 것.
+      **Q5** /api/debug·/api/docs/upload 를 부른 IP — 404 → 200 순서가 '찾았다'는 뜻.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # ── Q4 주입 패턴 표지 × 차단 여부 ──
+      # 1) Q4 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r12_ai_service.py dsl Q4
+
+      # 2) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r12/_search -d @- <<'EOF' | jq -r '.aggregations.b.buckets[] | "\(.key) | \(.doc_count) | \(.u.value)"'
+      {"size":0,"query":{"term":{"data.ai.flags":"injection_pattern"}},"aggs":{"b":{"terms":{"field":"data.ai.blocked","size":2},"aggs":{"u":{"cardinality":{"field":"data.ai.user"}}}}}}
+      EOF
+
+      # 3) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r12_ai_service.py ask Q4
+
+      # ── Q5 ai.kt66.lab — 디버그·문서 업로드 경로 호출 IP ──
+      # 4) Q5 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r12_ai_service.py dsl Q5
+
+      # 5) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r12/_search -d @- <<'EOF' | jq -r '.aggregations.ip.buckets[] | .key as $k | .st.buckets[] | "\($k) | \(.key) | \(.doc_count)"'
+      {"size":0,"query":{"bool":{"filter":[{"term":{"data.vhost":"ai.kt66.lab"}}],"should":[{"prefix":{"data.url":"/api/debug"}},{"prefix":{"data.url":"/api/docs"}}],"minimum_should_match":1}},"aggs":{"ip":{"terms":{"field":"data.srcip","size":5},"aggs":{"st":{"terms":{"field":"data.id","size":4}}}}}}
+      EOF
+
+      # 6) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r12_ai_service.py ask Q5
+      ```
+      - Q4 시각화: Split rows: Terms `data.ai.blocked` size 2 → Metric: Unique Count `data.ai.user` · 필터 `data.ai.flags:"injection_pattern"`
+      - Q5 시각화: Split rows: Terms `data.srcip` size 5 → Split rows: Terms `data.id` size 4 · 필터 `data.vhost:"ai.kt66.lab" and (data.url:/api/debug* or data.url:/api/docs*)`
+
+      ## ✅ 합격 기준
+      `131.110.93.35` 출력 시 통과.
+    hint: "Q4 / Q5"
+    category: analysis
+    points: 13
+    answer: |2
+      # Q4 주입 패턴 표지 × 차단 여부
+      python3 r12_ai_service.py ask Q4
+      # Q5 ai.kt66.lab — 디버그·문서 업로드 경로 호출 IP
+      python3 r12_ai_service.py ask Q5
+    answer_detail: "Q4: 주입 표지가 붙었는데 차단되지 않은 요청 — 방어가 놓친 것. Q5: /api/debug·/api/docs/upload 를 부른 IP — 404 → 200 순서가 '찾았다'는 뜻."
+    expected_output: |2
+      # Q4
+      true | 64 | 1
+      false | 29 | 1
+      # Q5
+      131.110.93.35 | 201 | 5
+      131.110.93.35 | 200 | 4
+      131.110.93.35 | 404 | 2
+      131.110.93.35 | 403 | 1
+    verify:
+      type: output_contains
+      expect: "131.110.93.35"
+      field: stdout
+      semantic:
+        intent: "탐지 집계"
+        success_criteria: ["Q4", "Q5"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 4
+    instruction: |2
+      ## 🎯 목표 — 관리콘솔(10.20.40.86)로 들어온 동서 연결
+      ## 📖 개념 한 줄
+      **Q6** AI 서버가 관리콘솔에 연결 — 도구(http_fetch) SSRF 의 네트워크 흔적.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # ── Q6 관리콘솔(10.20.40.86)로 들어온 동서 연결 — 출발지별 ──
+      # 1) Q6 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r12_ai_service.py dsl Q6
+
+      # 2) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r12/_search -d @- <<'EOF' | jq -r '.aggregations.src.buckets[] | .key as $k | .port.buckets[] | "\($k) | \(.key) | \(.doc_count)"'
+      {"size":0,"query":{"bool":{"filter":[{"term":{"data.event_type":"flow"}},{"term":{"data.dest_ip":"10.20.40.86"}}]}},"aggs":{"src":{"terms":{"field":"data.src_ip","size":4},"aggs":{"port":{"terms":{"field":"data.dest_port","size":2}}}}}}
+      EOF
+
+      # 3) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r12_ai_service.py ask Q6
+      ```
+      - Q6 시각화: Split rows: Terms `data.src_ip` size 4 → Split rows: Terms `data.dest_port` size 2 · 필터 `data.event_type:"flow" and data.dest_ip:"10.20.40.86"`
+
+      ## ✅ 합격 기준
+      `10.20.32.51` 출력 시 통과.
+    hint: "Q6"
+    category: analysis
+    points: 13
+    answer: |2
+      # Q6 관리콘솔(10.20.40.86)로 들어온 동서 연결 — 출발지별
+      python3 r12_ai_service.py ask Q6
+    answer_detail: "Q6: AI 서버가 관리콘솔에 연결 — 도구(http_fetch) SSRF 의 네트워크 흔적."
+    expected_output: |2
+      # Q6
+      10.20.32.51 | 80 | 662
+      10.20.32.51 | 9100 | 662
+      10.20.40.87 | 80 | 6
+    verify:
+      type: output_contains
+      expect: "10.20.32.51"
+      field: stdout
+      semantic:
+        intent: "탐지 집계"
+        success_criteria: ["Q6"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 5
+    instruction: |2
+      ## 🎯 목표 — 지속 탐지 — 모니터: 주입 패턴 표지 20회 이상인 사용자
+      ## 📖 개념 한 줄
+      한 번 찾은 집계는 모니터로 만든다. bucket_selector 로 '조건을 넘는 버킷'만 남기고, 버킷이 하나라도 있으면 트리거한다. Wazuh 상관 규칙은 분·시간 창의 기억이지만 모니터는 인덱스 전체(최대 1년)를 다시 센다 — 긴 창은 모니터의 몫이다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # 1) 모니터가 쓸 집계(+bucket_selector 조건)를 읽는다
+      python3 r12_ai_service.py dsl MON
+
+      # 2) 같은 집계를 지금 데이터에 — 조건을 넘는 버킷만 남는다
+      python3 r12_ai_service.py ask MON
+
+      # 3) Alerting 모니터 드라이런(_execute) — 등록하지 않고 트리거 판정만
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/_plugins/_alerting/monitors/_execute -d @- <<'EOF' | jq '.trigger_results | to_entries[] | {name: .value.name, triggered: .value.triggered}'
+      {"monitor":{"type":"monitor","name":"purple-r12-mon","enabled":false,"schedule":{"period":{"interval":10,"unit":"MINUTES"}},"inputs":[{"search":{"indices":["purple-r12"],"query":{"size":0,"query":{"term":{"data.ai.flags":"injection_pattern"}},"aggs":{"u":{"terms":{"field":"data.ai.user","size":50},"aggs":{"hit":{"bucket_selector":{"buckets_path":{"c":"_count"},"script":"params.c >= 20"}}}}}}}}],"triggers":[{"name":"주입 패턴 표지 20회 이상인 사용자","severity":"1","condition":{"script":{"source":"ctx.results[0].aggregations.u.buckets.size() > 0","lang":"painless"}},"actions":[]}]}}
+      EOF
+
+      # 4) 등록(비활성) — Dashboard → Alerting → Monitors 에서 보고, 10분 주기로 켜 본다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' -X POST https://10.20.32.110:9200/_plugins/_alerting/monitors -d @- <<'EOF' | jq -r '._id'
+      {"type":"monitor","name":"purple-r12-mon","enabled":false,"schedule":{"period":{"interval":10,"unit":"MINUTES"}},"inputs":[{"search":{"indices":["purple-r12"],"query":{"size":0,"query":{"term":{"data.ai.flags":"injection_pattern"}},"aggs":{"u":{"terms":{"field":"data.ai.user","size":50},"aggs":{"hit":{"bucket_selector":{"buckets_path":{"c":"_count"},"script":"params.c >= 20"}}}}}}}}],"triggers":[{"name":"주입 패턴 표지 20회 이상인 사용자","severity":"1","condition":{"script":{"source":"ctx.results[0].aggregations.u.buckets.size() > 0","lang":"painless"}},"actions":[]}]}
+      EOF
+      ```
+      - 트리거 조건: `ctx.results[0].aggregations.u.buckets.size() > 0`
+      - 4) 실제 운영에서는 질의에 `range timestamp gte now-1h` 를 더해 최근 구간만 본다(실습 데이터는 과거라 생략).
+
+      ## ✅ 합격 기준
+      `triggered` 출력 시 통과.
+    hint: "dsl MON → ask MON → _execute"
+    category: detection
+    points: 12
+    answer: |2
+      python3 r12_ai_service.py ask MON
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/_plugins/_alerting/monitors/_execute -d '{"monitor":{"type":"monitor","name":"purple-r12-mon","enabled":false,"schedule":{"period":{"interval":10,"unit":"MINUTES"}},"inputs":[{"search":{"indices":["purple-r12"],"query":{"size":0,"query":{"term":{"data.ai.flags":"injection_pattern"}},"aggs":{"u":{"terms":{"field":"data.ai.user","size":50},"aggs":{"hit":{"bucket_selector":{"buckets_path":{"c":"_count"},"script":"params.c >= 20"}}}}}}}}],"triggers":[{"name":"주입 패턴 표지 20회 이상인 사용자","severity":"1","condition":{"script":{"source":"ctx.results[0].aggregations.u.buckets.size() > 0","lang":"painless"}},"actions":[]}]}}' | jq -c '.trigger_results | to_entries[] | {name: .value.name, triggered: .value.triggered}'
+    answer_detail: "모니터 = 집계 + 조건 + 주기. 주입 패턴 표지 20회 이상인 사용자. 결과 버킷이 정답 키와 같으면 트리거 true."
+    expected_output: |2
+      # MON
+      u7731042 | 93
+      {"name":"주입 패턴 표지 20회 이상인 사용자","triggered":true}
+    verify:
+      type: output_contains
+      expect: "triggered"
+      field: stdout
+      semantic:
+        intent: "Alerting 모니터"
+        success_criteria: ["bucket_selector", "triggered true"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 6
+    instruction: |2
+      ## 🎯 목표 — 시그니처·호스트 규칙 — 네트워크·웹·호스트 층에서 같은 것을 잡을 수 있나
+      ## 📖 개념 한 줄
+      집계로 찾은 것을 각 센서의 규칙으로 옮긴다. 서명은 '한 줄·한 요청'에 강하고 분산·장기 패턴에 약하다. 검증은 실제 공격이 아니라 로그에서 재구성한 pcap·HTTP 재생·무해한 표식으로 한다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` (`cd ~/purple-agg`) — `docker cp`/`docker exec` 로 kt66-ips·kt66-web 에 적용
+
+      ```bash
+      # ── Suricata (kt66-ips) — 로그를 패킷으로 재구성해 오프라인 검사, 망에는 보내지 않는다 ──
+      # 1) 규칙 읽기 — msg·threshold·sid 96120xx
+      cat rules/r12/suricata.rules
+
+      # 2) pcap 재구성 (공격 + 같은 시간대 정상 표본)
+      python3 r12_ai_service.py pcap
+
+      # 3) ips 컨테이너로 복사
+      docker cp r12.pcap kt66-ips:/tmp/r12.pcap
+      docker cp rules/r12/suricata.rules kt66-ips:/tmp/r12.rules
+
+      # 4) 오프라인 검사 — -S 로 이 규칙만 (운영 룰셋과 섞지 않음)
+      docker exec kt66-ips mkdir -p /tmp/r12-out
+      docker exec kt66-ips suricata -r /tmp/r12.pcap -S /tmp/r12.rules -k none -l /tmp/r12-out
+
+      # 5) 규칙별 경보 수
+      docker exec kt66-ips sh -c "grep -o '\[1:[0-9]*:1\] [^[]*' /tmp/r12-out/fast.log | sort | uniq -c"
+
+      # ── ModSecurity (kt66-web) — 스텁 vhost purple-test.kt66.lab 에서만, 응답은 항상 "ok" ──
+      # 6) 스텁 vhost 설치(최초 1회: R02 에서 했으면 건너뜀) — README §3
+      # 7) 규칙 읽기 — id 912xx, phase·카운터(고정 창)
+      cat rules/r12/modsec.conf
+
+      # 8) 규칙 올리기 + 문법 검사 + 무중단 재적용
+      docker cp rules/r12/modsec.conf kt66-web:/etc/modsecurity/purple/r12.conf
+      docker exec kt66-web apache2ctl -t
+      docker exec kt66-web apache2ctl -k graceful
+
+      # 9) HTTP 재생 파일 만들기 (원래 출발지·상태코드·무해한 본문)
+      python3 r12_ai_service.py http
+
+      # 10) 스텁으로 재생 — X-Purple-Client 가 REMOTE_ADDR 로 바뀌어 IP 별 카운터가 실제처럼 돈다
+      python3 rules/common/purple_http_replay.py r12_http.jsonl --host 10.20.32.80
+
+      # 11) 룰 id 별 차단 수
+      docker exec kt66-web sh -c "grep -o 'id \"9[0-9]\{4\}\"' /var/log/apache2/purple_test_error.log | sort | uniq -c"
+
+      # ── osquery (호스트) — 예약 쿼리 팩. 실제 공격이 없으니 결과 [] 가 정상 ──
+      # 12) 쿼리 팩 읽기
+      cat rules/r12/osquery.conf
+
+      # 13) 대표 쿼리를 즉석 실행 (kt66-web) — R12: AI 서비스 프로세스가 띄운 셸·다운로더 (도구 남용)
+      docker exec kt66-web osqueryi --json "SELECT p.pid, p.name, p.cmdline, pp.name AS parent FROM processes p JOIN processes pp ON p.parent = pp.pid WHERE pp.name IN ('python3','uvicorn','gunicorn','node') AND p.name IN ('sh','bash','curl','wget');"
+      ```
+      - Suricata: threshold 는 '서명 한 줄'의 집계다. 분산·장기 패턴은 서명으로 안 잡히는 것이 정상 — 미션 2~5 의 집계와 비교한다.
+      - ModSecurity: 재생은 석 달을 몇 초로 압축한다 → 하루·주 단위 카운터는 부풀려진다. 임계값은 집계(미션 2~4)의 분포로 정한다.
+      - osquery: 운영 배포는 `/etc/osquery/osquery.conf` 의 packs 에 추가 → 결과는 osquery 결과 로그 → Wazuh(osquery 모듈)로 들어온다.
+      - 검증 해석: 9612002(채팅 본문 주입 문구)는 pcap 이 요청 본문을 재구성하지 않아 0 → 같은 판단을 ModSec 91202 가 HTTP 재생으로 검증한다(100건).
+
+      ## ✅ 합격 기준
+      `PURPLE R12` 출력 시 통과.
+    hint: "pcap → suricata -r / http 재생 → ModSec 로그"
+    category: detection
+    points: 12
+    answer: |2
+      python3 r12_ai_service.py pcap >/dev/null && docker cp r12.pcap kt66-ips:/tmp/ && docker cp rules/r12/suricata.rules kt66-ips:/tmp/r12.rules && docker exec kt66-ips sh -c 'mkdir -p /tmp/r12-out; suricata -r /tmp/r12.pcap -S /tmp/r12.rules -k none -l /tmp/r12-out >/dev/null 2>&1; grep -o "\[1:[0-9]*:1\] [^[]*" /tmp/r12-out/fast.log | sort | uniq -c'
+      docker cp rules/r12/modsec.conf kt66-web:/etc/modsecurity/purple/r12.conf && docker exec kt66-web apache2ctl -k graceful && python3 r12_ai_service.py http >/dev/null && python3 rules/common/purple_http_replay.py r12_http.jsonl --host 10.20.32.80 && docker exec kt66-web sh -c 'grep -o "id \"9[0-9]*\"" /var/log/apache2/purple_test_error.log | sort | uniq -c'
+    answer_detail: "규칙별 경보 수가 아래와 같으면 통과. 0 인 규칙은 이유(표본에 없음·body 없음·창 크기)를 적는다."
+    expected_output: |2
+            7 [1:9612001:1] PURPLE R12 AI debug endpoint access
+            9 [1:9612003:1] PURPLE R12 AI server to admin console (tool SSRF)
+      재생 526건 → 응답 코드 분포: 200:406, 400:105, 404:13, 500:2
+            7 id "91201"
+          100 id "91202"
+            5 id "91204"
+    verify:
+      type: output_contains
+      expect: "PURPLE R12"
+      field: stdout
+      semantic:
+        intent: "시그니처 규칙 검증"
+        success_criteria: ["Suricata 오프라인", "ModSec 스텁", "osquery 즉석"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 7
+    instruction: |2
+      ## 🎯 목표 — Wazuh 복합 이벤트 — 빈도·순서 상관과 Sigma
+      ## 📖 개념 한 줄
+      단건 경보(낮은 레벨)를 쌓아 빈도 규칙(같은 IP·같은 계정·서로 다른 IP)과 순서 규칙(A 뒤 B, 같은 출발지)으로 올린다. Wazuh 의 창은 분·시간·일 — 그보다 긴 체인은 미션 5 의 모니터가 맡는다. Sigma 로 같은 규칙을 도구 중립으로 남긴다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` (`cd ~/purple-agg`) — `docker exec kt66-siem`
+
+      ```bash
+      # 1) 규칙 읽기 — 단건(level 3~6) 위에 빈도(frequency·timeframe)·순서(if_matched_sid) 상관
+      cat rules/r12/wazuh_rules.xml
+
+      # 2) 공통 디코더·재생 입력(최초 1회: R01 에서 했으면 건너뜀) — README §4
+      # 3) 규칙 올리기
+      docker cp rules/r12/wazuh_rules.xml kt66-siem:/var/ossec/etc/rules/purple_r12.xml
+
+      # 4) 문법 검사 — 오류가 없어야 재시작한다
+      docker exec kt66-siem /var/ossec/bin/wazuh-analysisd -t
+
+      # 5) 재시작
+      docker exec kt66-siem /var/ossec/bin/wazuh-control restart
+
+      # 6) 재생 파일 만들기 (공격 + 같은 시간대 정상 표본, 원래 시각 포함)
+      python3 r12_ai_service.py replay
+
+      # 7) manager 로 복사 → 시간 간격을 지켜 흘려 넣기 (상관 규칙은 '도착 시각'으로 센다)
+      docker cp r12_replay.jsonl kt66-siem:/tmp/
+      docker cp rules/common/purple_log_replay.py kt66-siem:/tmp/
+      docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r12_replay.jsonl --dry
+      docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r12_replay.jsonl
+
+      # 8) 규칙별 경보 수 — 단건과 상관 규칙이 각각 몇 번 울렸나
+      docker exec kt66-siem sh -c "grep -oE 'Rule: 1912[0-9]+ \(level [0-9]+\)' /var/ossec/logs/alerts/alerts.log | sort | uniq -c"
+
+      # 9) Sigma — kt66 변환기(단건) → 부모 연결(--fix-parents) → 상관 변환
+      cp rules/r12/sigma/*.yml ~/kt66/sigma/rules/
+      python3 ~/kt66/sigma/sigma2wazuh.py ~/kt66/sigma/rules > /tmp/sigma_rules.xml
+      python3 sigma_corr2wazuh.py --fix-parents /tmp/sigma_rules.xml > /tmp/sigma_rules.fixed.xml
+      python3 sigma_corr2wazuh.py ~/kt66/sigma/rules /tmp/sigma_rules.fixed.xml > /tmp/sigma_corr_rules.xml
+      grep -c '<rule ' /tmp/sigma_rules.fixed.xml /tmp/sigma_corr_rules.xml
+      docker cp /tmp/sigma_rules.fixed.xml kt66-siem:/var/ossec/etc/rules/sigma_rules.xml
+      docker cp /tmp/sigma_corr_rules.xml kt66-siem:/var/ossec/etc/rules/sigma_corr_rules.xml
+      ```
+      - 8) N 은 재생 속도·표본에 따라 달라진다 — 단건 규칙이 먼저 울리고, 그 위에 상관 규칙이 '몇 번' 울렸는지를 적는다.
+      - 순서 규칙이 0 이면 `wazuh-logtest` 에 재생 파일의 해당 줄을 붙여 넣어 어느 규칙이 먼저 잡는지(31106·31151 등) 확인하고 if_sid 를 고친다.
+      - Sigma: kt66 변환기는 단건을 최상위 규칙으로 만든다 → 웹·sshd·Suricata 로그에서는 평가되지 않으므로 `--fix-parents` 로 부모를 연결한다.
+
+      ## ✅ 합격 기준
+      `Rule: 1912` 출력 시 통과.
+    hint: "rules → analysisd -t → restart → replay → alerts.log"
+    category: detection
+    points: 15
+    answer: |2
+      docker cp rules/r12/wazuh_rules.xml kt66-siem:/var/ossec/etc/rules/purple_r12.xml && docker exec kt66-siem /var/ossec/bin/wazuh-control restart >/dev/null && python3 r12_ai_service.py replay >/dev/null && docker cp r12_replay.jsonl kt66-siem:/tmp/ && docker cp rules/common/purple_log_replay.py kt66-siem:/tmp/ && docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r12_replay.jsonl >/dev/null && docker exec kt66-siem sh -c "grep -oE 'Rule: 1912[0-9]+ \(level [0-9]+\)' /var/ossec/logs/alerts/alerts.log | sort | uniq -c"
+    answer_detail: "Wazuh 규칙: 191201 (L8) PURPLE R12: 일반 사용자에게 없는 도구 호출 $(ai.tool) by $(srcuser); 191202 (L5) PURPLE R12: 프롬프트 주입 표지 $(srcuser) (blocked=$(ai.blocked)); 191203 (L12) PURPLE R12: 한 사용자 $(srcuser) 가 1시간에 주입 표지 10회 이상 — 반복 시도 [빈도 10/3600s]; 191204 (L12) PURPLE R12: 디버그 엔드포인트 200 응답 $(url) to $(srcip) — 설정·시스템 프롬프트 노출; 191205 (L10) PURPLE R12: AI 서버 → 관리콘솔 연결 — 도구 SSRF 의심"
+    expected_output: |2
+      (형식 — N 은 실행마다 다름)
+      N Rule: 191201 (level 8)
+      N Rule: 191202 (level 5)
+      N Rule: 191203 (level 12)
+      N Rule: 191204 (level 12)
+      N Rule: 191205 (level 10)
+    verify:
+      type: output_contains
+      expect: "Rule: 1912"
+      field: stdout
+      semantic:
+        intent: "Wazuh 상관 규칙 검증"
+        success_criteria: ["191201", "191202", "191203", "191204", "191205"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: siem
+
+  - order: 8
+    instruction: |2
+      ## 🎯 목표 — 대응과 라운드 카드
+      ## 📖 개념 한 줄
+      191203 → 사용자 정지·세션 폐기, 191204 → /api/debug 외부 차단(ModSec 91201), 191205 → AI 서버 egress 를 허용 목록으로 제한. 오염된 RAG 문서는 삭제·재색인.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` (`cd ~/purple-agg`)
+
+      ```bash
+      # 1) 이 라운드의 액티브 리스폰스 — 어떤 규칙에 무엇을 거나
+      cat rules/r12/wazuh_ar.xml
+
+      # 2) ossec.conf 에 추가 (purple-ar 명령·스크립트는 최초 1회 — README §4)
+      docker cp rules/r12/wazuh_ar.xml kt66-siem:/tmp/r12_ar.xml
+      docker exec kt66-siem sh -c "{ echo '<ossec_config>'; cat /tmp/r12_ar.xml; echo '</ossec_config>'; } >> /var/ossec/etc/ossec.conf"
+      docker exec kt66-siem /var/ossec/bin/wazuh-control restart
+
+      # 3) 재생을 한 번 더 → 대응 기록 확인 (purple-ar 은 '무엇을 했어야 하는지'만 적는다)
+      docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r12_replay.jsonl
+      docker exec kt66-siem tail -5 /var/ossec/logs/purple-ar.log
+
+      # 5) 라운드 카드 — 집계 숫자는 미션 1~5 의 출력에서 옮긴다
+      cat > ~/purple-agg/r12_card.md <<'EOF'
+      # PURPLE-AGG R12 라운드 카드 — AI 서비스 — 챗봇 로그의 이상치
+      ## 1. 질문: 챗봇 로그에서 '평범한 사용자는 쓰지 않는 것' — 도구·프롬프트 길이·주입 표지·디버그 경로
+      ## 2. 데이터: 총 2,445,975건 · 공격 236건 · 정상(배경 포함) 99.990%
+      ## 3. 집계 결과(첫 줄)
+      - Q1 챗봇 도구 호출 분포: none | 46954
+      - Q2 관리용 도구(http_fetch·file_read·shell)를 쓴 사용자: u7731042 | file_read | 8
+      - Q3 사용자별 최대·평균 프롬프트 길이 (최대 순 상위 5): u7731042 | 109 | 6500 | 4324
+      - Q4 주입 패턴 표지 × 차단 여부: true | 64 | 1
+      - Q5 ai.kt66.lab: 131.110.93.35 | 201 | 5
+      - Q6 관리콘솔(10.20.40.86)로 들어온 동서 연결: 10.20.32.51 | 80 | 662
+      ## 4. 규칙: Suricata 96120xx · ModSec 912xx · Wazuh 19120x · Sigma purple-r12-*
+      ## 5. 대응: 191203 → 사용자 정지·세션 폐기, 191204 → /api/debug 외부 차단(ModSec 91201), 191205 → AI 서버 egress 를 허용 목록으로 제한. 오염된 RAG 문서는 삭제·재색인.
+      ## 6. 놓친 것·다음 라운드: (직접 적는다)
+      EOF
+
+      # 6) 카드 확인
+      cat ~/purple-agg/r12_card.md
+      ```
+      - 대응 대상 규칙: 191203, 191204, 191205
+      - 재생 IP 는 가상(198.51.100.x·무작위 공인 대역)이다 — 위협 인텔로 공유하지 않는다.
+      - Dashboard: 미션 2~5 의 시각화를 하나의 Dashboard 로 묶어 스크린샷을 카드에 붙인다. ![스크린샷: r12 대시보드](images/r12-dashboard.png)
+
+      ## ✅ 합격 기준
+      `라운드 카드` 출력 시 통과.
+    hint: "wazuh_ar.xml → purple-ar.log → 카드"
+    category: report
+    points: 12
+    answer: |2
+      docker exec kt66-siem tail -3 /var/ossec/logs/purple-ar.log
+      cat > ~/purple-agg/r12_card.md <<'EOF'
+      # PURPLE-AGG R12 라운드 카드 — AI 서비스 — 챗봇 로그의 이상치
+      ## 1. 질문: 챗봇 로그에서 '평범한 사용자는 쓰지 않는 것' — 도구·프롬프트 길이·주입 표지·디버그 경로
+      ## 2. 데이터: 총 2,445,975건 · 공격 236건 · 정상(배경 포함) 99.990%
+      ## 3. 집계 결과(첫 줄)
+      - Q1 챗봇 도구 호출 분포: none | 46954
+      - Q2 관리용 도구(http_fetch·file_read·shell)를 쓴 사용자: u7731042 | file_read | 8
+      - Q3 사용자별 최대·평균 프롬프트 길이 (최대 순 상위 5): u7731042 | 109 | 6500 | 4324
+      - Q4 주입 패턴 표지 × 차단 여부: true | 64 | 1
+      - Q5 ai.kt66.lab: 131.110.93.35 | 201 | 5
+      - Q6 관리콘솔(10.20.40.86)로 들어온 동서 연결: 10.20.32.51 | 80 | 662
+      ## 4. 규칙: Suricata 96120xx · ModSec 912xx · Wazuh 19120x · Sigma purple-r12-*
+      ## 5. 대응: 191203 → 사용자 정지·세션 폐기, 191204 → /api/debug 외부 차단(ModSec 91201), 191205 → AI 서버 egress 를 허용 목록으로 제한. 오염된 RAG 문서는 삭제·재색인.
+      ## 6. 놓친 것·다음 라운드: (직접 적는다)
+      EOF
+      cat ~/purple-agg/r12_card.md
+    answer_detail: "대응은 규칙→행동의 연결이다. 자동은 기록·알림까지, 계정·호스트 조치는 사람이 확인 후. 카드는 다음 라운드의 입력."
+    expected_output: |2
+      2026-11-01 10:21:07 purple-ar add rule=191203 srcip=… action=quarantine-candidate
+      # PURPLE-AGG R12 라운드 카드 — AI 서비스 — 챗봇 로그의 이상치
+      ## 1. 질문: 챗봇 로그에서 '평범한 사용자는 쓰지 않는 것' — 도구·프롬프트 길이·주입 표지·디버그 경로
+      ## 2. 데이터: 총 2,445,975건 · 공격 236건 · 정상(배경 포함) 99.990%
+      ## 3. 집계 결과(첫 줄)
+      - Q1 챗봇 도구 호출 분포: none | 46954
+      - Q2 관리용 도구(http_fetch·file_read·shell)를 쓴 사용자: u7731042 | file_read | 8
+      - Q3 사용자별 최대·평균 프롬프트 길이 (최대 순 상위 5): u7731042 | 109 | 6500 | 4324
+      - Q4 주입 패턴 표지 × 차단 여부: true | 64 | 1
+      - Q5 ai.kt66.lab: 131.110.93.35 | 201 | 5
+      - Q6 관리콘솔(10.20.40.86)로 들어온 동서 연결: 10.20.32.51 | 80 | 662
+      ## 4. 규칙: Suricata 96120xx · ModSec 912xx · Wazuh 19120x · Sigma purple-r12-*
+      ## 5. 대응: 191203 → 사용자 정지·세션 폐기, 191204 → /api/debug 외부 차단(ModSec 91201), 191205 → AI 서버 egress 를 허용 목록으로 제한. 오염된 RAG 문서는 삭제·재색인.
+      ## 6. 놓친 것·다음 라운드: (직접 적는다)
+    verify:
+      type: output_contains
+      expect: "라운드 카드"
+      field: stdout
+      semantic:
+        intent: "대응 + 라운드 카드"
+        success_criteria: ["AR 연결", "카드 작성"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host

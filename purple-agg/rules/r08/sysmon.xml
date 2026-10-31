@@ -1,0 +1,9 @@
+<!-- KT66-WIN-01 Sysmon (Windows) -->
+<RuleGroup name="purple_r08" groupRelation="or">
+  <DnsQuery onmatch="include">
+    <QueryName condition="end with any">.cdn-sync-analytics.com;.telemetry-kt66.net</QueryName>
+  </DnsQuery>
+  <NetworkConnect onmatch="include">
+    <DestinationPort condition="is any">8443;4444;8888</DestinationPort>
+  </NetworkConnect>
+</RuleGroup>

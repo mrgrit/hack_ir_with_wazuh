@@ -1,0 +1,9 @@
+<!-- Sysmon for Linux (GPU 존·govportal) -->
+<RuleGroup name="purple_r10" groupRelation="or">
+  <FileCreate onmatch="include">
+    <TargetFilename condition="end with any">.kt66lock;README_RESTORE.txt</TargetFilename>
+  </FileCreate>
+  <NetworkConnect onmatch="include">
+    <DestinationPort condition="is any">3333;4444;5555;7777;14444</DestinationPort>
+  </NetworkConnect>
+</RuleGroup>

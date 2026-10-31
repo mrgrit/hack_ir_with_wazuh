@@ -1,0 +1,2 @@
+    720 [1:9601001:1] PURPLE R01 server-zone HTTP POST to non-80 port (beacon candidate)
+     72 [1:9601002:1] PURPLE R01 Caldera sandcat beacon URI /beat

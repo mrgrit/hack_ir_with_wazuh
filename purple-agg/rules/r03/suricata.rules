@@ -1,0 +1,4 @@
+# R03 — 웹 초기 침투 (sid 9603xxx)
+alert http any any -> any any (msg:"PURPLE R03 SQLi obfuscation - inline comment + UNION (mixed case)"; flow:established,to_server; http.uri; content:"/**/"; content:"union"; nocase; distance:0; metadata:mitre_technique_id T1190, purple_round R03; classtype:web-application-attack; sid:9603001; rev:1;)
+alert http any any -> any any (msg:"PURPLE R03 SQLi obfuscation - double URL encoding of quote"; flow:established,to_server; http.uri.raw; content:"%2527"; nocase; metadata:mitre_technique_id T1190, purple_round R03; classtype:web-application-attack; sid:9603002; rev:1;)
+alert http any any -> any any (msg:"PURPLE R03 SQLi tool cadence - 50 /api/history param requests in 5 min"; flow:established,to_server; http.uri; content:"/api/history?page="; startswith; threshold:type both, track by_src, count 50, seconds 300; metadata:mitre_technique_id T1190, purple_round R03; classtype:web-application-attack; sid:9603003; rev:1;)

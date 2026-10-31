@@ -1,0 +1,19 @@
+<!-- R01 (id 1901xx) — Suricata eve http 이벤트(86600 하위)에서 서버존발 비표준 포트 POST → 반복 시 비콘 -->
+<group name="purple,purple_r01,">
+  <rule id="190101" level="3">
+    <if_sid>86600</if_sid>
+    <field name="event_type">^http$</field>
+    <field name="src_ip">^10.20.40.</field>
+    <field name="http.http_method">^POST$</field>
+    <field name="dest_port" negate="yes">^80$|^443$</field>
+    <description>PURPLE R01: 서버존 $(src_ip) → $(dest_ip):$(dest_port) POST $(http.url)</description>
+  </rule>
+  <rule id="190102" level="10" frequency="20" timeframe="86400">
+    <if_matched_sid>190101</if_matched_sid>
+    <same_field>dest_ip</same_field>
+    <same_field>src_ip</same_field>
+    <description>PURPLE R01: 같은 서버가 같은 외부 목적지로 하루 20회 이상 POST — 비콘 의심 $(src_ip) → $(dest_ip)</description>
+    <mitre><id>T1071.001</id></mitre>
+    <group>attack,command_and_control,</group>
+  </rule>
+</group>

@@ -1,0 +1,53 @@
+title: PURPLE R03 SQLi Request Blocked
+name: purple_r03_blocked
+id: purple-r03-blocked
+status: experimental
+description: /api/history 에 대한 SQLi 요청이 403 으로 차단됨 (access log)
+logsource:
+    product: apache
+    category: webserver
+detection:
+    path:
+        keywords:
+            - 'GET /api/history?page='
+    status:
+        keywords:
+            - '" 403 '
+    condition: path and status
+level: low
+---
+title: PURPLE R03 Obfuscated SQLi Passed
+name: purple_r03_passed
+id: purple-r03-passed
+status: experimental
+description: 주석·이중 인코딩으로 섞은 SQLi 요청이 200 으로 통과
+logsource:
+    product: apache
+    category: webserver
+detection:
+    obf:
+        keywords:
+            - '/**/'
+            - '%2527'
+    status:
+        keywords:
+            - '" 200 '
+    condition: obf and status
+level: medium
+tags:
+    - attack.t1190
+---
+title: PURPLE R03 Blocked then Bypassed (same source)
+id: purple-r03-temporal
+status: experimental
+correlation:
+    type: temporal
+    rules:
+        - purple_r03_blocked
+        - purple_r03_passed
+    group-by:
+        - srcip
+    timespan: 2h
+level: critical
+tags:
+    - attack.t1190

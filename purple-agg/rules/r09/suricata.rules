@@ -1,0 +1,3 @@
+# R09 — 중간 종합 (sid 9609xxx) · R03(9603001~3)·R04(9604001~2) 규칙을 함께 로드
+alert tcp 10.20.40.0/24 any -> 10.20.40.0/24 22 (msg:"PURPLE R09 server-to-server SSH (not via bastion)"; flags:S,12; threshold:type limit, track by_src, count 1, seconds 600; metadata:mitre_technique_id T1021.004, purple_round R09; classtype:policy-violation; sid:9609001; rev:1;)
+alert tcp 10.20.40.0/24 any -> !10.20.0.0/16 443 (msg:"PURPLE R09 server zone large upload (>100MB)"; flow:established,to_server; stream_size:client,>,100000000; metadata:mitre_technique_id T1041, purple_round R09; classtype:policy-violation; sid:9609002; rev:1;)

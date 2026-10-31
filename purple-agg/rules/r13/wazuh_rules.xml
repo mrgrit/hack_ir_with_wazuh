@@ -1,0 +1,31 @@
+<!-- R13 (id 1913xx) — 기계 속도: 짧은 timeframe 의 frequency -->
+<group name="purple,purple_r13,">
+  <rule id="191301" level="12" frequency="100" timeframe="30">
+    <if_matched_sid>31101</if_matched_sid>
+    <same_srcip />
+    <description>PURPLE R13: 30초에 4xx 100회 $(srcip) — 사람이 낼 수 없는 속도의 경로 대입</description>
+    <mitre><id>T1595.003</id></mitre>
+    <group>attack,recon,</group>
+  </rule>
+  <rule id="191302" level="14" timeframe="300">
+    <if_sid>31100,31103,31104,31105,31106,31108</if_sid>
+    <if_matched_sid>191301</if_matched_sid>
+    <same_srcip />
+    <id>^200</id>
+    <url type="pcre2">(?i)/\*\*/union|union/\*\*/</url>
+    <description>PURPLE R13: 고속 대입 직후 5분 안에 같은 IP 의 SQLi 통과 $(srcip) — 자율 공격 체인</description>
+    <mitre><id>T1190</id></mitre>
+  </rule>
+  <rule id="191303" level="6">
+    <if_sid>5715</if_sid>
+    <srcip>10.20.40.0/24</srcip>
+    <description>PURPLE R13: 서버존발 SSH 로그인 $(srcip) → $(hostname)</description>
+  </rule>
+  <rule id="191304" level="14" frequency="3" timeframe="60">
+    <if_matched_sid>191303</if_matched_sid>
+    <same_srcip />
+    <description>PURPLE R13: 60초에 같은 서버에서 3대로 SSH 성공 $(srcip) — 기계 속도 내부 확산</description>
+    <mitre><id>T1021.004</id></mitre>
+    <group>attack,lateral_movement,</group>
+  </rule>
+</group>

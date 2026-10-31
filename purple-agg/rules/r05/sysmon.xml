@@ -1,0 +1,6 @@
+<RuleGroup name="purple_r05" groupRelation="or">
+  <ProcessCreate onmatch="include">
+    <Image condition="begin with">/dev/shm/</Image>
+    <CommandLine condition="contains any">truncate -s 0 /var/log;history -c;systemctl stop wazuh-agent</CommandLine>
+  </ProcessCreate>
+</RuleGroup>

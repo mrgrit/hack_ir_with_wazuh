@@ -1,0 +1,5 @@
+# R15 — 최종 (sid 9615xxx) · 앞 라운드 규칙(9606·9608·9612·9613)과 함께
+pass http 125.42.78.218 any -> 198.51.100.84 80 (msg:"PURPLE R15 authorized scanner (allowlist)"; sid:9615000; rev:1;)
+alert http 10.20.40.87 any -> 10.20.40.86 any (msg:"PURPLE R15 AI server calls admin export API (SSRF)"; flow:established,to_server; http.uri; content:"/api/users/export"; startswith; metadata:mitre_technique_id T1090, purple_round R15; classtype:web-application-attack; sid:9615001; rev:1;)
+alert tcp 10.20.70.0/24 any -> 10.20.40.0/24 22 (msg:"PURPLE R15 user PC SSH to server (bypass bastion)"; flags:S,12; metadata:mitre_technique_id T1021.004, purple_round R15; classtype:policy-violation; sid:9615002; rev:1;)
+alert dns 10.20.70.0/24 any -> any 53 (msg:"PURPLE R15 DNS tunnel - long hex label"; dns.query; pcre:"/^[0-9a-f]{40,}\./"; threshold:type both, track by_src, count 50, seconds 600; metadata:mitre_technique_id T1071.004, purple_round R15; classtype:trojan-activity; sid:9615003; rev:1;)

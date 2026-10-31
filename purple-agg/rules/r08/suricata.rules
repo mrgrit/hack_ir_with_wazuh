@@ -1,0 +1,5 @@
+# R08 — C2·유출 (sid 9608xxx)
+alert dns 10.20.70.0/24 any -> any 53 (msg:"PURPLE R08 DNS tunnel - 40+ hex char label"; dns.query; pcre:"/^[0-9a-f]{40,}\./"; threshold:type both, track by_src, count 50, seconds 600; metadata:mitre_technique_id T1071.004, purple_round R08; classtype:trojan-activity; sid:9608001; rev:1;)
+alert tcp 10.20.70.0/24 any -> !10.20.0.0/16 8443 (msg:"PURPLE R08 user zone to external 8443 (non-standard TLS)"; flow:to_server; flags:S,12; threshold:type limit, track by_src, count 1, seconds 3600; metadata:mitre_technique_id T1571, purple_round R08; classtype:policy-violation; sid:9608002; rev:1;)
+# 대용량 업로드는 서명보다 eve flow 의 bytes_toserver 합계(집계)로 본다 — 참고용 stream_size 규칙
+alert tcp 10.20.70.0/24 any -> !10.20.0.0/16 443 (msg:"PURPLE R08 large upload over TLS (>100MB, stream)"; flow:established,to_server; stream_size:client,>,100000000; metadata:mitre_technique_id T1567, purple_round R08; classtype:policy-violation; sid:9608003; rev:1;)

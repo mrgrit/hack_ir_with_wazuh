@@ -1,0 +1,29 @@
+<!-- R04 (id 1904xx) — 웹셸 호출 → 계정 생성 / FIM(.php 추가·/etc 변경) 상관 -->
+<group name="purple,purple_r04,">
+  <rule id="190401" level="12">
+    <if_sid>31100,31103,31104,31105,31106,31108</if_sid>
+    <url type="pcre2">^/uploads/[^?]+\.php</url>
+    <description>PURPLE R04: 업로드 폴더 PHP 호출 $(srcip) $(url) — 웹셸 의심</description>
+    <mitre><id>T1505.003</id></mitre>
+    <group>attack,webshell,</group>
+  </rule>
+  <rule id="190402" level="14" timeframe="7200">
+    <if_sid>5902</if_sid>
+    <if_matched_sid>190401</if_matched_sid>
+    <description>PURPLE R04: 웹셸 호출 뒤 2시간 안에 계정 생성 $(dstuser) — 지속성 확보</description>
+    <mitre><id>T1136.001</id></mitre>
+    <group>attack,persistence,</group>
+  </rule>
+  <rule id="190403" level="12">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">/uploads/.+\.ph(p\d?|tml|ar)$</field>
+    <description>PURPLE R04: 업로드 폴더에 스크립트 파일 생성 $(file)</description>
+    <mitre><id>T1505.003</id></mitre>
+  </rule>
+  <rule id="190404" level="12">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/etc/(cron\.d/|crontab|rc\.local|passwd|shadow)|/\.ssh/authorized_keys$</field>
+    <description>PURPLE R04: 지속성 관련 파일 변경 $(file)</description>
+    <mitre><id>T1053.003</id><id>T1098.004</id></mitre>
+  </rule>
+</group>

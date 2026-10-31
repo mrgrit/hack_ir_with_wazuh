@@ -1,0 +1,4 @@
+# R07 — 내부 이동 (sid 9607xxx)
+alert tcp 10.20.30.201 any -> 10.20.40.0/24 ![22,80,443] (msg:"PURPLE R07 east-west port sweep from bastion"; flags:S,12; threshold:type both, track by_src, count 20, seconds 60; metadata:mitre_technique_id T1046, purple_round R07; classtype:attempted-recon; sid:9607001; rev:1;)
+alert tcp 10.20.40.0/24 any -> 10.20.70.0/24 445 (msg:"PURPLE R07 server zone to user PC SMB - lateral movement"; flow:to_server; flags:S,12; metadata:mitre_technique_id T1021.002, purple_round R07; classtype:policy-violation; sid:9607002; rev:1;)
+alert tcp 10.20.30.201 any -> 10.20.40.0/24 22 (msg:"PURPLE R07 bastion SSH fan-out - 5 servers in 10 min"; flags:S,12; threshold:type both, track by_src, count 5, seconds 600; metadata:mitre_technique_id T1021.004, purple_round R07; classtype:policy-violation; sid:9607003; rev:1;)

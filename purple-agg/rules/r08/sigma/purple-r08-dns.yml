@@ -1,0 +1,28 @@
+title: PURPLE R08 Long Hex Subdomain Query
+name: purple_r08_longlabel
+id: purple-r08-longlabel
+status: experimental
+logsource:
+    product: kt66
+    service: dns
+detection:
+    selection:
+        query|re: 'query\[(TXT|A)\] [0-9a-f]{40,}\.'
+    condition: selection
+level: informational
+---
+title: PURPLE R08 DNS Tunnel - 100 queries in 15 min
+id: purple-r08-dns-corr
+status: experimental
+correlation:
+    type: event_count
+    rules:
+        - purple_r08_longlabel
+    group-by:
+        - srcip
+    timespan: 15m
+    condition:
+        gte: 100
+level: high
+tags:
+    - attack.t1071.004

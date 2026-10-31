@@ -1,0 +1,10 @@
+<!-- kt66-siem 의 /var/ossec/etc/ossec.conf 의 <ossec_config> 안에 한 번 추가 (R01 미션 7)
+     재생(replay) 파일에 줄을 덧붙이면 manager 가 직접 읽어 룰·상관·액티브 리스폰스가 실제로 동작한다 -->
+<localfile>
+  <log_format>syslog</log_format>
+  <location>/var/ossec/logs/purple/replay_syslog.log</location>
+</localfile>
+<localfile>
+  <log_format>json</log_format>
+  <location>/var/ossec/logs/purple/replay_json.log</location>
+</localfile>

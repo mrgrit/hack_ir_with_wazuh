@@ -1,0 +1,19 @@
+title: PURPLE R05 Web Service Account sudo
+name: purple_r05_websudo
+id: purple-r05-websudo
+status: experimental
+logsource:
+    product: linux
+    service: sudo
+detection:
+    selection:
+        keywords:
+            - 'sudo['
+    user:
+        keywords:
+            - ' www-data : '
+    condition: selection and user
+level: high
+tags:
+    - attack.privilege_escalation
+    - attack.t1548.003

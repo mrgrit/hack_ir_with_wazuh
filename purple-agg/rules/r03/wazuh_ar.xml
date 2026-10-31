@@ -1,0 +1,11 @@
+<active-response>
+  <command>purple-ar</command>
+  <location>server</location>
+  <rules_id>190302</rules_id>
+</active-response>
+<active-response>
+  <command>firewall-drop</command>
+  <location>server</location>
+  <rules_id>190301</rules_id>
+  <timeout>1800</timeout>
+</active-response>

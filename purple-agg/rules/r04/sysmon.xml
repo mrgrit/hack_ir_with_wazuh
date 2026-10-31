@@ -1,0 +1,8 @@
+<RuleGroup name="purple_r04" groupRelation="or">
+  <ProcessCreate onmatch="include">
+    <Rule name="R04 web server spawns shell" groupRelation="and">
+      <ParentImage condition="end with">/apache2</ParentImage>
+      <Image condition="end with any">/sh;/bash;/dash</Image>
+    </Rule>
+  </ProcessCreate>
+</RuleGroup>

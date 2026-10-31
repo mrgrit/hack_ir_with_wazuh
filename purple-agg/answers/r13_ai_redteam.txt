@@ -1,0 +1,50 @@
+  · 외부 IP 풀 생성 중 (신규 방문자 1,000,000개)…
+===== R13 AI 레드팀 — 기계 속도의 체인 — 정답 키 (기준일 2026-11-01, 기간 90일, scale 1.0, 프로파일 labeling 집계 1개 파일 · 출발지 13,543개) =====
+총 2,471,615건 · 공격 721건 · 정상(배경 포함) 99.971%
+
+# Q0 총 이벤트 수와 서로 다른 외부 출발지 IP 수
+  2471615 | 1054025
+
+# Q1 juice.kt66.lab 분당 요청 — 250건 이상인 분
+  10-30 04:11 | 448
+
+# Q2 juice.kt66.lab 의 User-Agent 상위 8
+  Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 | 173983
+  Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1 | 140325
+  Mozilla/5.0 (Linux; Android 14; SM-S918N) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36 | 127910
+  Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0 | 58915
+  Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15 | 47172
+  Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0 | 34574
+  Mozilla/5.0+(compatible; UptimeRobot/2.0; http://www.uptimerobot.com/) | 4054
+  Pingdom.com_bot_version_1.4_(http://www.pingdom.com/) | 4049
+
+# Q3 python-httpx 출발지 — 건수·처음·마지막(초)·활동 일수
+  92.10.220.142 | 661 | 10-02 04:02:00 | 10-30 04:12:25 | 3
+
+# Q4 체인 단계 전이 — 분 단위 (공격 IP · node 셸 · juiceshop발 SSH · neobank 유출)
+  10-02 04:02 | web-accesslog | 60
+  10-16 04:02 | web-accesslog | 60
+  10-30 04:11 | web-accesslog | 448
+  10-30 04:11 | modsecurity | 28
+  10-30 04:12 | web-accesslog | 93
+  10-30 04:12 | modsecurity | 12
+  10-30 04:12 | auditd | 11
+  10-30 04:12 | json | 1
+  10-30 04:13 | sshd | 6
+  10-30 04:13 | auditd | 1
+  10-30 04:13 | json | 1
+
+# Q5 juiceshop(10.20.40.81)에서 나간 SSH — 서버별 성공 시각(초)
+  neobank | 10-30 04:13:10
+  govportal | 10-30 04:13:18
+  mediforum | 10-30 04:13:24
+
+# Q6 공격 IP 92.10.220.142 관련 경보 레벨 분포 — 레벨 10 이상이 있었나
+  5 | 564
+  0 | 98
+  6 | 40
+
+# MON 한 IP 가 1분에 200건 이상 요청 (기계 속도)
+  10-30 04:11 | 92.10.220.142 | 448
+
+(계산 58초 · 서로 다른 값 수(cardinality)는 인덱서에선 근사치)

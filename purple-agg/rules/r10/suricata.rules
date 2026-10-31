@@ -1,0 +1,4 @@
+# R10 — 영향 (sid 9610xxx)
+alert tcp 10.20.50.0/24 any -> !10.20.0.0/16 [3333,4444,5555,7777,14444] (msg:"PURPLE R10 GPU zone to stratum mining port"; flow:to_server; flags:S,12; threshold:type limit, track by_src, count 1, seconds 3600; metadata:mitre_technique_id T1496, purple_round R10; classtype:policy-violation; sid:9610001; rev:1;)
+alert dns any any -> any 53 (msg:"PURPLE R10 mining pool domain lookup"; dns.query; pcre:"/(minexmr|xmrpool|nanopool|supportxmr|2miners|f2pool|hashvault)/i"; metadata:mitre_technique_id T1496, purple_round R10; classtype:policy-violation; sid:9610002; rev:1;)
+alert http any 80 -> any any (msg:"PURPLE R10 5xx surge from one vhost - 20 in 10 min (availability - attack or outage?)"; flow:established,to_client; http.stat_code; content:"5"; startswith; threshold:type both, track by_src, count 20, seconds 600; metadata:purple_round R10; classtype:unknown; sid:9610003; rev:1;)

@@ -1,0 +1,28 @@
+title: PURPLE R12 Privileged Tool Call by AI User
+name: purple_r12_tool
+id: purple-r12-tool
+status: experimental
+logsource:
+    product: kt66
+    service: aicompanion
+detection:
+    selection:
+        tool|re: '"tool":\s?"(http_fetch|file_read|shell)"'
+    condition: selection
+level: medium
+---
+title: PURPLE R12 Tool Abuse - 5 privileged calls per user per hour
+id: purple-r12-tool-corr
+status: experimental
+correlation:
+    type: event_count
+    rules:
+        - purple_r12_tool
+    group-by:
+        - srcuser
+    timespan: 1h
+    condition:
+        gte: 5
+level: high
+tags:
+    - attack.t1059

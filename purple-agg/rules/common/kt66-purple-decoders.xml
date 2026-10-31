@@ -1,0 +1,28 @@
+<!-- kt66 퍼플(집계 트랙) 디코더 — kt66-siem: /var/ossec/etc/decoders/kt66-purple-decoders.xml
+     생성기가 만드는 FW·메일 게이트웨이·DNS 요약 로그용. 웹(apache)·sshd·sudo·useradd 는 Wazuh 기본 디코더를 쓴다. -->
+<decoder name="kt66-fw">
+  <program_name>^kt66-fw</program_name>
+</decoder>
+<decoder name="kt66-fw-fields">
+  <parent>kt66-fw</parent>
+  <regex type="pcre2">^(\S+) IN=\S* OUT=\S* SRC=(\S+) DST=(\S+) PROTO=(\S+) SPT=(\d+) DPT=(\d+)</regex>
+  <order>action,srcip,dstip,protocol,srcport,dstport</order>
+</decoder>
+
+<decoder name="kt66-mailgw">
+  <program_name>^kt66-mailgw</program_name>
+</decoder>
+<decoder name="kt66-mailgw-fields">
+  <parent>kt66-mailgw</parent>
+  <regex type="pcre2">direction=(\S+) client=(\S+) from=&lt;([^&gt;]*)&gt; to=&lt;([^&gt;]*)&gt; size=(\d+) status=(\S+)</regex>
+  <order>direction,srcip,from,to,size,status</order>
+</decoder>
+
+<decoder name="kt66-dns">
+  <program_name>^kt66-dns</program_name>
+</decoder>
+<decoder name="kt66-dns-fields">
+  <parent>kt66-dns</parent>
+  <regex type="pcre2">query\[(\S+)\] (\S+) from (\S+)</regex>
+  <order>qtype,query,srcip</order>
+</decoder>

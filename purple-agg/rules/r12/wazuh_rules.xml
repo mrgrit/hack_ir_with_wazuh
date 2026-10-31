@@ -1,0 +1,36 @@
+<!-- R12 (id 1912xx) — aicompanion JSON 로그 (data.ai.*) -->
+<group name="purple,purple_r12,">
+  <rule id="191201" level="8">
+    <decoded_as>json</decoded_as>
+    <field name="ai.tool" type="pcre2">^(http_fetch|file_read|shell)$</field>
+    <description>PURPLE R12: 일반 사용자에게 없는 도구 호출 $(ai.tool) by $(srcuser)</description>
+    <mitre><id>T1059</id></mitre>
+  </rule>
+  <rule id="191202" level="5">
+    <decoded_as>json</decoded_as>
+    <field name="ai.flags">injection_pattern</field>
+    <description>PURPLE R12: 프롬프트 주입 표지 $(srcuser) (blocked=$(ai.blocked))</description>
+  </rule>
+  <rule id="191203" level="12" frequency="10" timeframe="3600">
+    <if_matched_sid>191202</if_matched_sid>
+    <same_srcuser />
+    <description>PURPLE R12: 한 사용자 $(srcuser) 가 1시간에 주입 표지 10회 이상 — 반복 시도</description>
+    <mitre><id>T1059</id></mitre>
+    <group>attack,llm,</group>
+  </rule>
+  <rule id="191204" level="12">
+    <if_sid>31100,31103,31104,31105,31106,31108</if_sid>
+    <url>^/api/debug</url>
+    <id>^200</id>
+    <description>PURPLE R12: 디버그 엔드포인트 200 응답 $(url) to $(srcip) — 설정·시스템 프롬프트 노출</description>
+    <mitre><id>T1190</id></mitre>
+  </rule>
+  <rule id="191205" level="10">
+    <if_sid>86600</if_sid>
+    <field name="event_type">^flow$</field>
+    <field name="src_ip">^10.20.40.87$</field>
+    <field name="dest_ip">^10.20.40.86$</field>
+    <description>PURPLE R12: AI 서버 → 관리콘솔 연결 — 도구 SSRF 의심</description>
+    <mitre><id>T1090</id></mitre>
+  </rule>
+</group>

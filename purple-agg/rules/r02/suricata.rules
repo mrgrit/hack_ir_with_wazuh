@@ -1,0 +1,4 @@
+# R02 — 정찰 (sid 9602xxx)
+alert tcp !10.20.0.0/16 any -> 198.51.100.0/24 any (msg:"PURPLE R02 inbound SYN sweep - 40 SYN/60s from one source"; flow:stateless; flags:S,12; threshold:type both, track by_src, count 40, seconds 60; metadata:mitre_technique_id T1046, purple_round R02; classtype:attempted-recon; sid:9602001; rev:1;)
+alert http any 80 -> any any (msg:"PURPLE R02 404 storm - 30 not-found responses/120s to one client"; flow:established,to_client; http.stat_code; content:"404"; threshold:type both, track by_dst, count 30, seconds 120; metadata:mitre_technique_id T1595.003, purple_round R02; classtype:attempted-recon; sid:9602002; rev:1;)
+alert http any any -> any any (msg:"PURPLE R02 hidden neobank API path probe"; flow:established,to_server; http.uri; pcre:"/^\/api\/v1\/(admin\/users|accounts\/export)/"; metadata:mitre_technique_id T1595, purple_round R02; classtype:attempted-recon; sid:9602003; rev:1;)

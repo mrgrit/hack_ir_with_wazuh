@@ -1,0 +1,29 @@
+title: PURPLE R09 Server-to-Server SSH Login
+name: purple_r09_s2s
+id: purple-r09-s2s
+status: experimental
+logsource:
+    product: linux
+    service: sshd
+detection:
+    selection:
+        msg|re: 'Accepted password for \S+ from 10\.20\.40\.'
+    condition: selection
+level: high
+tags:
+    - attack.t1021.004
+---
+title: PURPLE R09 Log File Deleted
+name: purple_r09_logdel
+id: purple-r09-logdel
+status: experimental
+logsource:
+    product: linux
+    service: syscheck
+detection:
+    selection:
+        msg|re: "File '(/var/log/\\S+|\\S+/\\.bash_history)' deleted"
+    condition: selection
+level: high
+tags:
+    - attack.t1070.002

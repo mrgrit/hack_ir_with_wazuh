@@ -1,0 +1,33 @@
+title: PURPLE R02 Hidden API Path Probe
+name: purple_r02_hidden_api
+id: purple-r02-hidden-api
+status: experimental
+description: 외부에 공개되지 않은 neobank 관리 API 경로 요청 (404)
+logsource:
+    product: apache
+    category: webserver
+detection:
+    selection:
+        keywords:
+            - 'GET /api/v1/admin/users'
+            - 'GET /api/v1/accounts/export'
+    condition: selection
+level: low
+tags:
+    - attack.reconnaissance
+    - attack.t1595
+---
+title: PURPLE R02 Distributed Probe - 20 sources per day
+id: purple-r02-hidden-api-corr
+status: experimental
+correlation:
+    type: value_count
+    rules:
+        - purple_r02_hidden_api
+    timespan: 1d
+    condition:
+        gte: 20
+        field: srcip
+level: high
+tags:
+    - attack.t1595

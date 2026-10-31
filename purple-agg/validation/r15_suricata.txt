@@ -1,0 +1,3 @@
+     20 [1:9615001:1] PURPLE R15 AI server calls admin export API (SSRF)
+      1 [1:9615002:1] PURPLE R15 user PC SSH to server (bypass bastion)
+      4 [1:9615003:1] PURPLE R15 DNS tunnel - long hex label

@@ -1,0 +1,41 @@
+  · 외부 IP 풀 생성 중 (신규 방문자 1,000,000개)…
+===== R15 최종 — 혼합 체인과 미끼 — 정답 키 (기준일 2026-11-01, 기간 90일, scale 1.0, 프로파일 labeling 집계 1개 파일 · 출발지 13,543개) =====
+총 2,467,369건 · 공격 3,906건 · 정상(배경 포함) 99.842%
+
+# Q0 총 이벤트 수와 서로 다른 외부 출발지 IP 수
+  2467369 | 1049538
+
+# Q1 KT66-WIN-01 프로세스 생성 — 부모 × 자식 (드문 쌍)
+  C:\Program Files\Microsoft Office\WINWORD.EXE | C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe | 1
+  C:\Windows\explorer.exe | C:\Program Files\OUTLOOK.EXE | 799
+  C:\Windows\explorer.exe | C:\Program Files\EXCEL.EXE | 777
+
+# Q2 KT66-WIN-01 외부 목적지 — 건수·활동 일수·업로드 MB
+  194.98.0.93 | 2850 | 60 | 3
+  111.237.90.118 | 6 | 6 | 0
+  219.127.72.116 | 6 | 6 | 0
+
+# Q3 서버 SSH 로그인 — bastion(10.20.30.201)이 아닌 출발지
+  10.20.70.10 | adminconsole | 1
+
+# Q4 DNS — 서로 다른 질의 이름 200개 이상인 도메인
+  telemetry-kt66.net | 10.20.70.10 | 500
+
+# Q5 관리콘솔 웹 — 출발지별 요청·응답 합계 MB (내부 출발지 포함)
+  10.20.40.87 | 20 | 12
+  10.20.70.25 | 54 | 0
+  10.20.70.24 | 52 | 0
+  10.20.70.22 | 39 | 0
+
+# Q6 서버존 → 외부 업로드 — 목적지별 MB·활동 일수 (매일 반복 = 정상 백업 후보)
+  222.164.181.171 | 89 | 168781 | 89
+  71.212.10.1 | 1 | 13 | 1
+
+# Q7 404 고유 URL 100개 이상 IP (허용 목록 대조용)
+  125.42.78.218 | Mozilla/5.0 (KT66-Authorized-Scanner) | 350
+  25.17.75.133 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 | 42
+
+# MON bastion 이 아닌 내부 출발지의 서버 SSH 로그인
+  10.20.70.10 | adminconsole | 1
+
+(계산 39초 · 서로 다른 값 수(cardinality)는 인덱서에선 근사치)

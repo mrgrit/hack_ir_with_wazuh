@@ -1,0 +1,36 @@
+title: PURPLE R01 Server Zone POST to Non-standard Port
+name: purple_r01_server_post
+id: purple-r01-server-post
+status: experimental
+description: 서버존(10.20.40.x)에서 외부 비표준 포트로 나가는 HTTP POST (Suricata eve http)
+logsource:
+    product: suricata
+    category: network
+detection:
+    selection:
+        event|re: '"event_type":\s?"http"'
+    srczone:
+        src|re: '"src_ip":\s?"10\.20\.40\.'
+    port:
+        dport|re: '"dest_port":\s?"?(?!80"|443")\d+'
+    condition: selection and srczone and port
+level: low
+tags:
+    - attack.command_and_control
+    - attack.t1071.001
+---
+title: PURPLE R01 Beacon - 20 POSTs per day to same destination
+id: purple-r01-beacon-corr
+status: experimental
+correlation:
+    type: event_count
+    rules:
+        - purple_r01_server_post
+    group-by:
+        - dest_ip
+    timespan: 1d
+    condition:
+        gte: 20
+level: high
+tags:
+    - attack.t1071.001

@@ -1,0 +1,9 @@
+<!-- Sysmon(리눅스) 규칙 그룹 — /opt/sysmon/config.xml 의 <EventFiltering> 안에 넣는다 -->
+<RuleGroup name="purple_r01" groupRelation="or">
+  <NetworkConnect onmatch="include">
+    <Rule name="R01 tmp-binary outbound" groupRelation="and">
+      <Image condition="begin with">/tmp/</Image>
+      <DestinationPort condition="is not">443</DestinationPort>
+    </Rule>
+  </NetworkConnect>
+</RuleGroup>

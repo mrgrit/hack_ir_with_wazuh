@@ -1,0 +1,4 @@
+# R13 — AI 레드팀 (sid 9613xxx)
+alert http any any -> 198.51.100.0/24 80 (msg:"PURPLE R13 automation client UA (python-httpx/aiohttp/Go)"; flow:established,to_server; http.user_agent; pcre:"/^(python-httpx|python-requests|aiohttp|Go-http-client)\//"; threshold:type limit, track by_src, count 1, seconds 300; metadata:purple_round R13; classtype:attempted-recon; sid:9613001; rev:1;)
+alert http any any -> 198.51.100.0/24 80 (msg:"PURPLE R13 machine-speed requests - 100 in 20s from one source"; flow:established,to_server; threshold:type both, track by_src, count 100, seconds 20; metadata:mitre_technique_id T1595.003, purple_round R13; classtype:attempted-recon; sid:9613002; rev:1;)
+alert tcp 10.20.40.0/24 any -> 10.20.40.0/24 22 (msg:"PURPLE R13 rapid server-to-server SSH - 3 targets in 60s"; flags:S,12; threshold:type both, track by_src, count 3, seconds 60; metadata:mitre_technique_id T1021.004, purple_round R13; classtype:policy-violation; sid:9613003; rev:1;)

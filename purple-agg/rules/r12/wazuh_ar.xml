@@ -1,0 +1,6 @@
+<active-response>
+  <command>purple-ar</command>
+  <location>server</location>
+  <rules_id>191203,191204,191205</rules_id>
+</active-response>
+<!-- 191203 → 해당 사용자 세션 정지(앱 관리 API) / 191205 → AI 서버 egress 를 허용 목록만으로 (nft) -->

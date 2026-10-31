@@ -1,0 +1,35 @@
+title: PURPLE R04 Webshell Access under Uploads
+name: purple_r04_webshell
+id: purple-r04-webshell
+status: experimental
+logsource:
+    product: apache
+    category: webserver
+detection:
+    selection:
+        keywords:
+            - '/uploads/'
+    php:
+        keywords:
+            - '.php?c='
+    condition: selection and php
+level: high
+tags:
+    - attack.persistence
+    - attack.t1505.003
+---
+title: PURPLE R04 Webshell Used Repeatedly (3 in 1h)
+id: purple-r04-webshell-corr
+status: experimental
+correlation:
+    type: event_count
+    rules:
+        - purple_r04_webshell
+    group-by:
+        - srcip
+    timespan: 1h
+    condition:
+        gte: 3
+level: critical
+tags:
+    - attack.t1505.003

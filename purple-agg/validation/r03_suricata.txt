@@ -1,0 +1,3 @@
+     77 [1:9603001:1] PURPLE R03 SQLi obfuscation - inline comment + UNION (mixed case)
+     60 [1:9603002:1] PURPLE R03 SQLi obfuscation - double URL encoding of quote
+      6 [1:9603003:1] PURPLE R03 SQLi tool cadence - 50 /api/history param requests in 5 min

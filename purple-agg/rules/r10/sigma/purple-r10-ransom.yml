@@ -1,0 +1,28 @@
+title: PURPLE R10 Encrypted Extension File Added
+name: purple_r10_lockfile
+id: purple-r10-lockfile
+status: experimental
+logsource:
+    product: linux
+    service: syscheck
+detection:
+    selection:
+        msg|re: "File '\\S+\\.kt66lock' added"
+    condition: selection
+level: medium
+tags:
+    - attack.t1486
+---
+title: PURPLE R10 Ransomware Burst - 50 files in 2 min
+id: purple-r10-ransom-corr
+status: experimental
+correlation:
+    type: event_count
+    rules:
+        - purple_r10_lockfile
+    timespan: 2m
+    condition:
+        gte: 50
+level: critical
+tags:
+    - attack.t1486

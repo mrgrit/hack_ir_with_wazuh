@@ -1,0 +1,2 @@
+    262 [1:9610001:1] PURPLE R10 GPU zone to stratum mining port
+     30 [1:9610002:1] PURPLE R10 mining pool domain lookup

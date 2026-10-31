@@ -1,0 +1,35 @@
+<!-- R02 (id 1902xx) -->
+<group name="purple,purple_r02,">
+  <rule id="190201" level="10" frequency="30" timeframe="120">
+    <if_matched_sid>31101</if_matched_sid>
+    <same_srcip />
+    <description>PURPLE R02: 같은 IP 가 2분에 4xx 30회 이상 — 웹 경로 대입 의심 $(srcip)</description>
+    <mitre><id>T1595.003</id></mitre>
+    <group>attack,recon,</group>
+  </rule>
+  <rule id="190202" level="6">
+    <if_sid>31101</if_sid>
+    <url type="pcre2">^/api/v1/(admin/users|accounts/export)</url>
+    <description>PURPLE R02: 숨은 API 경로 탐침 $(srcip) $(url)</description>
+  </rule>
+  <rule id="190203" level="12" frequency="20" timeframe="86400">
+    <if_matched_sid>190202</if_matched_sid>
+    <different_srcip />
+    <description>PURPLE R02: 하루에 서로 다른 IP 20곳이 같은 숨은 API 를 탐침 — 분산 저속 정찰</description>
+    <mitre><id>T1595</id></mitre>
+    <group>attack,recon,</group>
+  </rule>
+  <rule id="190204" level="3">
+    <decoded_as>kt66-fw</decoded_as>
+    <action>DROP</action>
+    <description>PURPLE R02: FW 차단 $(srcip) → $(dstip):$(dstport)</description>
+  </rule>
+  <rule id="190205" level="10" frequency="40" timeframe="60">
+    <if_matched_sid>190204</if_matched_sid>
+    <same_srcip />
+    <different_dstport />
+    <description>PURPLE R02: 1분에 서로 다른 포트 40개 이상 차단 — 포트 스캔 $(srcip)</description>
+    <mitre><id>T1046</id></mitre>
+    <group>attack,recon,</group>
+  </rule>
+</group>

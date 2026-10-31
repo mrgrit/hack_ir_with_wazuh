@@ -1,0 +1,20 @@
+<!-- R03 (id 1903xx) — 차단 반복 → 같은 IP 의 우회 성공(200) 순서 상관 -->
+<group name="purple,purple_r03,">
+  <rule id="190301" level="8" frequency="20" timeframe="600">
+    <if_matched_sid>31101</if_matched_sid>
+    <same_srcip />
+    <url>/api/history</url>
+    <description>PURPLE R03: 10분에 /api/history 4xx 20회 이상 $(srcip) — SQLi 대입 중</description>
+    <mitre><id>T1190</id></mitre>
+  </rule>
+  <rule id="190302" level="13" timeframe="7200">
+    <if_sid>31100,31103,31104,31105,31106,31108</if_sid>
+    <if_matched_sid>190301</if_matched_sid>
+    <same_srcip />
+    <id>^200</id>
+    <url type="pcre2">(?i)union|/\*\*/|%2527</url>
+    <description>PURPLE R03: 차단이 반복되던 $(srcip) 의 SQLi 요청이 200 으로 통과 — WAF 우회 성공</description>
+    <mitre><id>T1190</id></mitre>
+    <group>attack,web_attack,</group>
+  </rule>
+</group>

@@ -1,0 +1,29 @@
+<!-- R09 (id 1909xx) — 앞 라운드 규칙과 함께 로드 -->
+<group name="purple,purple_r09,">
+  <rule id="190901" level="10">
+    <if_sid>5715</if_sid>
+    <srcip>10.20.40.0/24</srcip>
+    <description>PURPLE R09: 서버존 출발지 $(srcip) 에서 서버로 SSH 로그인 $(dstuser) — bastion 을 거치지 않음</description>
+    <mitre><id>T1021.004</id></mitre>
+    <group>attack,lateral_movement,</group>
+  </rule>
+  <rule id="190902" level="13" timeframe="300">
+    <if_sid>190901</if_sid>
+    <if_matched_sid>5716</if_matched_sid>
+    <same_srcip />
+    <description>PURPLE R09: 서버→서버 SSH 실패 직후 성공 $(srcip) — 탈취 자격증명 재사용</description>
+    <mitre><id>T1078</id></mitre>
+  </rule>
+  <rule id="190903" level="12">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^/var/log/|/\.bash_history$</field>
+    <description>PURPLE R09: 로그·히스토리 삭제 $(file) — 흔적 지우기</description>
+    <mitre><id>T1070.002</id><id>T1070.003</id></mitre>
+  </rule>
+  <rule id="190904" level="12">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">^/var/www/[^/]+/files/.+\.ph(p\d?|tml|ar)$</field>
+    <description>PURPLE R09: govportal 파일 폴더에 스크립트 생성 $(file)</description>
+    <mitre><id>T1505.003</id></mitre>
+  </rule>
+</group>

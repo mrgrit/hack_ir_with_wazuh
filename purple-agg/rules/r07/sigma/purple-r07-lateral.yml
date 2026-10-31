@@ -1,0 +1,32 @@
+title: PURPLE R07 SSH Login via Bastion
+name: purple_r07_bastion_ssh
+id: purple-r07-bastion-ssh
+status: experimental
+logsource:
+    product: linux
+    service: sshd
+detection:
+    selection:
+        keywords:
+            - 'Accepted password for'
+    src:
+        keywords:
+            - 'from 10.20.30.201 '
+    condition: selection and src
+level: informational
+---
+title: PURPLE R07 One Account Fans Out (4 logins in 10 min)
+id: purple-r07-fanout
+status: experimental
+correlation:
+    type: event_count
+    rules:
+        - purple_r07_bastion_ssh
+    group-by:
+        - user
+    timespan: 10m
+    condition:
+        gte: 4
+level: high
+tags:
+    - attack.t1021.004

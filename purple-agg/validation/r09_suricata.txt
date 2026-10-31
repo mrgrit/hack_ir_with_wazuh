@@ -1,0 +1,4 @@
+    192 [1:9603001:1] PURPLE R03 SQLi obfuscation - inline comment + UNION (mixed case)
+    192 [1:9603002:1] PURPLE R03 SQLi obfuscation - double URL encoding of quote
+      8 [1:9604002:1] PURPLE R04 webshell command parameter (c=)
+      1 [1:9609001:1] PURPLE R09 server-to-server SSH (not via bastion)

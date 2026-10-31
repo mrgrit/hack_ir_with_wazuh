@@ -1,0 +1,13 @@
+<!-- KT66-WIN-01 Sysmon (Windows) -->
+<RuleGroup name="purple_r15" groupRelation="or">
+  <ProcessCreate onmatch="include">
+    <Rule name="R15 Office spawns shell" groupRelation="and">
+      <ParentImage condition="end with any">\WINWORD.EXE;\EXCEL.EXE</ParentImage>
+      <Image condition="end with any">\powershell.exe;\cmd.exe;\mshta.exe</Image>
+    </Rule>
+    <CommandLine condition="contains any">-enc ;-EncodedCommand;-w hidden</CommandLine>
+  </ProcessCreate>
+  <DnsQuery onmatch="include">
+    <QueryName condition="end with">.telemetry-kt66.net</QueryName>
+  </DnsQuery>
+</RuleGroup>

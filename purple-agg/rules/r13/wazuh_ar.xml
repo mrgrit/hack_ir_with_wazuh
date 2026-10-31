@@ -1,0 +1,12 @@
+<active-response>
+  <command>firewall-drop</command>
+  <location>server</location>
+  <rules_id>191301</rules_id>
+  <timeout>900</timeout>
+</active-response>
+<active-response>
+  <command>purple-ar</command>
+  <location>server</location>
+  <rules_id>191301,191302,191304</rules_id>
+</active-response>
+<!-- 기계 속도 공격은 사람이 경보를 읽기 전에 끝난다 → 자동 차단(firewall-drop) 이 의미 있는 유일한 라운드 -->

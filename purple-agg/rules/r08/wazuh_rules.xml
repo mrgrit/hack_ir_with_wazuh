@@ -1,0 +1,42 @@
+<!-- R08 (id 1908xx) -->
+<group name="purple,purple_r08,">
+  <rule id="190801" level="5">
+    <decoded_as>kt66-dns</decoded_as>
+    <field name="query" type="pcre2">^[0-9a-f]{40,}\.</field>
+    <description>PURPLE R08: 16진수 40자 이상 서브도메인 질의 $(query) from $(srcip)</description>
+  </rule>
+  <rule id="190802" level="12" frequency="100" timeframe="900">
+    <if_matched_sid>190801</if_matched_sid>
+    <same_srcip />
+    <description>PURPLE R08: 15분에 긴 서브도메인 질의 100회 이상 $(srcip) — DNS 터널</description>
+    <mitre><id>T1071.004</id><id>T1048.003</id></mitre>
+    <group>attack,exfiltration,</group>
+  </rule>
+  <rule id="190803" level="6">
+    <if_sid>86600</if_sid>
+    <field name="event_type">^flow$</field>
+    <field name="src_ip" type="pcre2">^10\.20\.70\.</field>
+    <field name="dest_port">^8443$</field>
+    <description>PURPLE R08: 사용자 PC → 외부 8443 흐름 $(dest_ip)</description>
+  </rule>
+  <rule id="190804" level="10" frequency="10" timeframe="86400">
+    <if_matched_sid>190803</if_matched_sid>
+    <same_field>dest_ip</same_field>
+    <description>PURPLE R08: 하루에 같은 외부 8443 목적지로 10회 이상 — 백업 C2 채널</description>
+    <mitre><id>T1571</id></mitre>
+  </rule>
+  <rule id="190805" level="3">
+    <if_sid>86600</if_sid>
+    <field name="event_type">^flow$</field>
+    <field name="src_ip" type="pcre2">^10\.20\.70\.</field>
+    <field name="dest_port">^443$</field>
+    <description>PURPLE R08: 사용자 PC → 외부 443 흐름</description>
+  </rule>
+  <rule id="190806" level="8" frequency="22" timeframe="86400">
+    <if_matched_sid>190805</if_matched_sid>
+    <same_field>src_ip</same_field>
+    <same_field>dest_ip</same_field>
+    <description>PURPLE R08: 하루 22회 이상 같은 PC→같은 외부 443 — 비콘 후보 (규칙성은 집계로 확인)</description>
+    <mitre><id>T1071.001</id></mitre>
+  </rule>
+</group>

@@ -1,0 +1,6 @@
+<active-response>
+  <command>purple-ar</command>
+  <location>server</location>
+  <rules_id>190604,190606</rules_id>
+</active-response>
+<!-- 190604 → 계정 잠금·세션 폐기는 사람이 확인 후 (purple-ar 은 기록과 알림만). 190603 은 IP 차단이 소용없다 -->

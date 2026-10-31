@@ -1,0 +1,28 @@
+title: PURPLE R13 Automation Client Request
+name: purple_r13_ua
+id: purple-r13-ua
+status: experimental
+logsource:
+    product: apache
+    category: webserver
+detection:
+    selection:
+        ua|re: '" "(python-httpx|python-requests|aiohttp|Go-http-client)/'
+    condition: selection
+level: low
+---
+title: PURPLE R13 Machine Speed - 100 requests in 30s
+id: purple-r13-speed-corr
+status: experimental
+correlation:
+    type: event_count
+    rules:
+        - purple_r13_ua
+    group-by:
+        - srcip
+    timespan: 30s
+    condition:
+        gte: 100
+level: high
+tags:
+    - attack.t1595.003

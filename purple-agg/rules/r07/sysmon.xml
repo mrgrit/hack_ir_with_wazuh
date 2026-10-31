@@ -1,0 +1,14 @@
+<!-- KT66-WIN-01 Sysmon (Windows) -->
+<RuleGroup name="purple_r07" groupRelation="or">
+  <ProcessCreate onmatch="include">
+    <Image condition="end with">\PSEXESVC.exe</Image>
+    <ParentImage condition="end with">\PSEXESVC.exe</ParentImage>
+    <CommandLine condition="contains all">net;user;/add</CommandLine>
+  </ProcessCreate>
+  <NetworkConnect onmatch="include">
+    <Rule name="R07 inbound SMB from server zone" groupRelation="and">
+      <DestinationPort condition="is">445</DestinationPort>
+      <SourceIp condition="begin with">10.20.40.</SourceIp>
+    </Rule>
+  </NetworkConnect>
+</RuleGroup>

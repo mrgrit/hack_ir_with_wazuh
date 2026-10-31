@@ -1,0 +1,12 @@
+<active-response>
+  <command>purple-ar</command>
+  <location>server</location>
+  <rules_id>190201,190203,190205</rules_id>
+</active-response>
+<!-- 실제 차단(선택): firewall-drop 은 10분 후 자동 해제. 분산 정찰(190203)에는 소용없다는 점을 미션 8에서 확인 -->
+<active-response>
+  <command>firewall-drop</command>
+  <location>server</location>
+  <rules_id>190201,190205</rules_id>
+  <timeout>600</timeout>
+</active-response>

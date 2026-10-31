@@ -1,0 +1,606 @@
+lab_id: purple-agg-r01
+title: "퍼플 집계 R01 — 가시성 베이스라인 — 정상의 모양과 서버발 비콘"
+version: purple-agg-1
+course: purple-agg
+week: 1
+description: |
+  R01 운영체제 수립 + 가시성 베이스라인 — 정상의 모양을 집계로 재고, 그 위에서 튀는 것을 본다.
+
+  Red(로그로만 재현): juiceshop 서버(10.20.40.81)에 심긴 Caldera sandcat 이 C2 로 30~60초마다 POST /beat.
+                     Discovery 명령(whoami·pwd·ls·ifconfig·which)은 로그가 남지 않는다(가시성 0).
+  Blue: 엔드포인트별 정상 분포 → 서버발 외부 목적지 집계 → 시간 규칙성 → 모니터.
+
+  실제 공격은 하지 않는다. 생성기가 만든 로그(정상 99.9% + 공격)를 인덱서에 적재해 집계로 찾고, 같은 판단을 Suricata·ModSecurity·Wazuh·Sigma·osquery 규칙과 모니터로 자동화한 뒤 대응한다. 명령은 한 줄씩 — answer 의 연결 명령은 자동 채점용.
+difficulty: medium
+duration_minutes: 180
+prerequisites:
+  - "kt66 설치·기동 + Wazuh 인덱서 https://10.20.32.110:9200 접근 (admin)"
+  - "~/purple-agg 번들 배치 (README §1~4 최초 설정)"
+  - "jq, python3"
+objectives:
+  - "엔드포인트(가상 IP)별 정상 분포를 Terms·Cardinality 집계로 기록한다"
+  - "서버존(10.20.40.x)발 외부 목적지를 '출발지 수 × 활동 일수'로 줄 세워 비콘 후보를 고른다"
+  - "일 단위 Date Histogram 으로 75일 잠복 + 하루의 대화형 폭주를 구분한다"
+  - "Suricata·Wazuh·Sigma 규칙과 Alerting 모니터로 같은 판단을 자동화한다"
+pass_threshold: 0.7
+steps:
+
+  - order: 1
+    instruction: |2
+      ## 🎯 목표 — 데이터 적재와 정상의 모양 — 이벤트 출처(에이전트)별 분포 — 정상의 모양 ①
+      ## 📖 개념 한 줄
+      정상의 크기를 먼저 잰다. 어느 센서가 얼마나 말하는지부터 본다 — 정상의 크기를 모르면 이상의 크기도 모른다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # 1) 인덱서 연결 확인 — 클러스터 이름·버전, 이미 있는 purple-* 인덱스
+      python3 r01_baseline.py check
+
+      # 2) 로그 생성·적재 — 90일, 엔드포인트 10곳 정상 99.9% + 공격 (실제 공격 없음, 수 분)
+      python3 r01_baseline.py gen --anchor 2026-11-01
+
+      # 3) 적재 건수 확인 — 총 이벤트 수 | 서로 다른 외부 IP 수 (Q0)
+      python3 r01_baseline.py ask Q0
+
+      # 4) Dashboard: Stack Management → Index Patterns → purple-* (시간 필드 timestamp) — 있으면 건너뜀
+      # 5) Discover 에서 purple-r01 · 기간 2026-08-01 ~ 2026-11-01 로 맞춘다
+
+      # 6) Q1 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r01_baseline.py dsl Q1
+
+      # 7) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r01/_search -d @- <<'EOF' | jq -r '.aggregations.by_agent.buckets[] | "\(.key) | \(.doc_count)"'
+      {"size":0,"aggs":{"by_agent":{"terms":{"field":"agent.name","size":15}}}}
+      EOF
+
+      # 8) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r01_baseline.py ask Q1
+      ```
+      - 2) 기준일 `2026-11-01` 로 고정해야 정답 키와 숫자가 같다(다른 날짜면 분포는 같고 시각만 밀린다).
+      - 시각화: Split rows: Terms `agent.name` size 15
+
+      ## ✅ 합격 기준
+      `juiceshop` 출력 시 통과.
+    hint: "gen → ask Q0 → Q1"
+    category: survey
+    points: 10
+    answer: |2
+      # 1) 생성·적재 (기준일 고정)
+      python3 r01_baseline.py gen --anchor 2026-11-01 >/dev/null && python3 r01_baseline.py ask Q0
+      # 2) 정상의 모양
+      python3 r01_baseline.py ask Q1
+    answer_detail: "총 2,444,723건 · 공격 2,262건 · 정상(배경 포함) 99.907% — 정상이 99.9% 인 데이터에서 '정상의 모양'을 먼저 기록한다. 어느 센서가 얼마나 말하는지부터 본다 — 정상의 크기를 모르면 이상의 크기도 모른다."
+    expected_output: |2
+      # Q0
+      2444723 | 1049880
+      # Q1
+      juiceshop | 646923
+      govportal | 544452
+      neobank | 431298
+      mediforum | 306478
+      aicompanion | 291603
+      ips | 48743
+      dns | 42087
+      mail | 35166
+      bastion | 29942
+      webmail | 29462
+      …
+    verify:
+      type: output_contains
+      expect: "juiceshop"
+      field: stdout
+      semantic:
+        intent: "적재 + 정상 기준선"
+        success_criteria: ["인덱스 purple-r01", "Q0 건수", "Q1 분포"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 2
+    instruction: |2
+      ## 🎯 목표 — 웹 엔드포인트별 요청 수와 서로 다른 방문 IP 수 · 주별 이벤트 추이 (7일 버킷, KST)
+      ## 📖 개념 한 줄
+      **Q2** 웹 7개 vhost 는 포트가 아니라 각자의 가상 IP(198.51.100.x)를 가진다. 요청 수와 방문 IP 수의 비율이 서비스의 성격이다.
+      **Q3** 90일 전체를 7일 버킷으로 접으면 계절성·공백·급증이 한 화면에 보인다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # ── Q2 웹 엔드포인트별 요청 수와 서로 다른 방문 IP 수 — 정상의 모양 ② ──
+      # 1) Q2 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r01_baseline.py dsl Q2
+
+      # 2) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r01/_search -d @- <<'EOF' | jq -r '.aggregations.by_vhost.buckets[] | "\(.key) | \(.doc_count) | \(.ips.value)"'
+      {"size":0,"query":{"term":{"decoder.name":"web-accesslog"}},"aggs":{"by_vhost":{"terms":{"field":"data.vhost","size":10},"aggs":{"ips":{"cardinality":{"field":"data.srcip","precision_threshold":40000}}}}}}
+      EOF
+
+      # 3) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r01_baseline.py ask Q2
+
+      # ── Q3 주별 이벤트 추이 (7일 버킷, KST) — 기간 전체의 모양 ──
+      # 4) Q3 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r01_baseline.py dsl Q3
+
+      # 5) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r01/_search -d @- <<'EOF' | jq -r '.aggregations.per_week.buckets[] | "\(.key_as_string) | \(.doc_count)"'
+      {"size":0,"aggs":{"per_week":{"date_histogram":{"field":"timestamp","fixed_interval":"7d","time_zone":"+09:00","format":"yyyy-MM-dd","min_doc_count":1}}}}
+      EOF
+
+      # 6) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r01_baseline.py ask Q3
+      ```
+      - Q2 시각화: Split rows: Terms `data.vhost` size 10 → Metric: Unique Count `data.srcip` · 필터 `decoder.name:"web-accesslog"`
+      - Q3 시각화: Split rows: Date Histogram `timestamp` 간격 7d
+
+      ## ✅ 합격 기준
+      `2026-07-30` 출력 시 통과.
+    hint: "Q2 / Q3"
+    category: analysis
+    points: 13
+    answer: |2
+      # Q2 웹 엔드포인트별 요청 수와 서로 다른 방문 IP 수 — 정상의 모양 ②
+      python3 r01_baseline.py ask Q2
+      # Q3 주별 이벤트 추이 (7일 버킷, KST) — 기간 전체의 모양
+      python3 r01_baseline.py ask Q3
+    answer_detail: "Q2: 웹 7개 vhost 는 포트가 아니라 각자의 가상 IP(198.51.100.x)를 가진다. 요청 수와 방문 IP 수의 비율이 서비스의 성격이다. Q3: 90일 전체를 7일 버킷으로 접으면 계절성·공백·급증이 한 화면에 보인다."
+    expected_output: |2
+      # Q2
+      juice.kt66.lab | 601306 | 316077
+      govportal.kt66.lab | 505865 | 264044
+      neobank.kt66.lab | 400135 | 212161
+      mediforum.kt66.lab | 282181 | 150464
+      ai.kt66.lab | 218010 | 119863
+      webmail.kt66.lab | 24870 | 4020
+      admin.kt66.lab | 515 | 15
+      # Q3
+      2026-07-30 | 80707
+      2026-08-06 | 191114
+      2026-08-13 | 190769
+      2026-08-20 | 191084
+      2026-08-27 | 187822
+      2026-09-03 | 189122
+      2026-09-10 | 192501
+      2026-09-17 | 191836
+      2026-09-24 | 190562
+      2026-10-01 | 190030
+      …
+    verify:
+      type: output_contains
+      expect: "2026-07-30"
+      field: stdout
+      semantic:
+        intent: "탐지 집계"
+        success_criteria: ["Q2", "Q3"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 3
+    instruction: |2
+      ## 🎯 목표 — 서버존(10.20.40.x)에서 밖으로 나간 연결 · 출발지 1곳뿐인 목적지(53.81.8.74)
+      ## 📖 개념 한 줄
+      **Q4** 서버는 먼저 말을 걸지 않는다 — 서버존발 외부 연결 중 '출발지 1곳 × 매일'은 사람이 아니라 프로그램이다.
+      **Q5** 같은 목적지의 일별 건수 — 평소 24건(1시간 주기)인데 하루만 수백 건이면 운영자가 붙은 날이다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # ── Q4 서버존(10.20.40.x)에서 밖으로 나간 연결 — 목적지 상위 ──
+      # 1) Q4 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r01_baseline.py dsl Q4
+
+      # 2) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r01/_search -d @- <<'EOF' | jq -r '.aggregations.by_dst.buckets[] | "\(.key) | \(.doc_count) | \(.srcs.value) | \(.days.buckets|length)"'
+      {"size":0,"query":{"prefix":{"data.src_ip":"10.20.40."}},"aggs":{"by_dst":{"terms":{"field":"data.dest_ip","size":8},"aggs":{"srcs":{"cardinality":{"field":"data.src_ip"}},"days":{"date_histogram":{"field":"timestamp","fixed_interval":"1d","time_zone":"+09:00","min_doc_count":1}}}}}}
+      EOF
+
+      # 3) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r01_baseline.py ask Q4
+
+      # ── Q5 출발지 1곳뿐인 목적지(53.81.8.74) — 일별 요청 수 (가장 많은 날 순) ──
+      # 4) Q5 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r01_baseline.py dsl Q5
+
+      # 5) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r01/_search -d @- <<'EOF' | jq -r '.aggregations.per_day.buckets[] | "\(.key_as_string) | \(.doc_count)"' | head -6
+      {"size":0,"query":{"term":{"data.dest_ip":"53.81.8.74"}},"aggs":{"per_day":{"date_histogram":{"field":"timestamp","fixed_interval":"1d","time_zone":"+09:00","format":"yyyy-MM-dd","min_doc_count":1,"order":{"_count":"desc"}}}}}
+      EOF
+
+      # 6) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r01_baseline.py ask Q5
+      ```
+      - Q4 시각화: Split rows: Terms `data.dest_ip` size 8 → Metric: Unique Count `data.src_ip` → Split rows: Date Histogram `timestamp` 간격 1d · 필터 `data.src_ip:10.20.40.*`
+      - Q5 시각화: Split rows: Date Histogram `timestamp` 간격 1d · 필터 `data.dest_ip:"53.81.8.74"`
+
+      ## ✅ 합격 기준
+      `2026-10-30` 출력 시 통과.
+    hint: "Q4 / Q5"
+    category: analysis
+    points: 13
+    answer: |2
+      # Q4 서버존(10.20.40.x)에서 밖으로 나간 연결 — 목적지 상위
+      python3 r01_baseline.py ask Q4
+      # Q5 출발지 1곳뿐인 목적지(53.81.8.74) — 일별 요청 수 (가장 많은 날 순)
+      python3 r01_baseline.py ask Q5
+    answer_detail: "Q4: 서버는 먼저 말을 걸지 않는다 — 서버존발 외부 연결 중 '출발지 1곳 × 매일'은 사람이 아니라 프로그램이다. Q5: 같은 목적지의 일별 건수 — 평소 24건(1시간 주기)인데 하루만 수백 건이면 운영자가 붙은 날이다."
+    expected_output: |2
+      # Q4
+      53.81.8.74 | 2262 | 1 | 75
+      128.46.18.8 | 1544 | 6 | 90
+      50.43.18.30 | 1519 | 6 | 90
+      177.26.187.82 | 1510 | 6 | 90
+      173.33.200.126 | 1496 | 6 | 90
+      94.192.235.148 | 1464 | 6 | 90
+      180.185.226.103 | 1420 | 6 | 90
+      # Q5
+      2026-10-30 | 503
+      2026-08-23 | 25
+      2026-08-28 | 25
+      2026-08-31 | 25
+      2026-09-03 | 25
+      2026-09-05 | 25
+    verify:
+      type: output_contains
+      expect: "2026-10-30"
+      field: stdout
+      semantic:
+        intent: "탐지 집계"
+        success_criteria: ["Q4", "Q5"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 4
+    instruction: |2
+      ## 🎯 목표 — 같은 목적지 요청의 경로·메서드·UA 조합 · 지금 경보(rule.level ≥ 7)는 무엇을 보고 있나
+      ## 📖 개념 한 줄
+      **Q6** 경로·메서드·UA 조합이 하나뿐이면 사람이 아니라 에이전트다.
+      **Q7** 지금의 경보는 무엇을 보고 있나 — 비콘은 경보 상위에 없다(가시성 ✔ 탐지 ✘).
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # ── Q6 같은 목적지 요청의 경로·메서드·UA 조합 ──
+      # 1) Q6 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r01_baseline.py dsl Q6
+
+      # 2) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r01/_search -d @- <<'EOF' | jq -r '.aggregations.by_url.buckets[] | .key as $k | .m.buckets[] | "\($k) | \(.key) | \(.doc_count)"'
+      {"size":0,"query":{"term":{"data.dest_ip":"53.81.8.74"}},"aggs":{"by_url":{"terms":{"field":"data.http.url","size":5},"aggs":{"m":{"terms":{"field":"data.http.http_user_agent","size":3}}}}}}
+      EOF
+
+      # 3) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r01_baseline.py ask Q6
+
+      # ── Q7 지금 경보(rule.level ≥ 7)는 무엇을 보고 있나 — 상위 5 ──
+      # 4) Q7 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r01_baseline.py dsl Q7
+
+      # 5) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r01/_search -d @- <<'EOF' | jq -r '.aggregations.by_rule.buckets[] | "\(.key) | \(.doc_count)"'
+      {"size":0,"query":{"range":{"rule.level":{"gte":7}}},"aggs":{"by_rule":{"terms":{"field":"rule.description","size":5}}}}
+      EOF
+
+      # 6) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r01_baseline.py ask Q7
+      ```
+      - Q6 시각화: Split rows: Terms `data.http.url` size 5 → Split rows: Terms `data.http.http_user_agent` size 3 · 필터 `data.dest_ip:"53.81.8.74"`
+      - Q7 시각화: Split rows: Terms `rule.description` size 5 · 필터 `rule.level >= 7`
+
+      ## ✅ 합격 기준
+      `Integrity checksum changed.` 출력 시 통과.
+    hint: "Q6 / Q7"
+    category: analysis
+    points: 13
+    answer: |2
+      # Q6 같은 목적지 요청의 경로·메서드·UA 조합
+      python3 r01_baseline.py ask Q6
+      # Q7 지금 경보(rule.level ≥ 7)는 무엇을 보고 있나 — 상위 5
+      python3 r01_baseline.py ask Q7
+    answer_detail: "Q6: 경로·메서드·UA 조합이 하나뿐이면 사람이 아니라 에이전트다. Q7: 지금의 경보는 무엇을 보고 있나 — 비콘은 경보 상위에 없다(가시성 ✔ 탐지 ✘)."
+    expected_output: |2
+      # Q6
+      /beat | Go-http-client/1.1 | 2261
+      /file/download | curl/7.81.0 | 1
+      # Q7
+      Integrity checksum changed. | 7095
+      sshd: brute force trying to get access to the system. Non existent user. | 736
+      File deleted. | 540
+    verify:
+      type: output_contains
+      expect: "Integrity checksum changed."
+      field: stdout
+      semantic:
+        intent: "탐지 집계"
+        success_criteria: ["Q6", "Q7"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 5
+    instruction: |2
+      ## 🎯 목표 — 지속 탐지 — 모니터: 서버존발 외부 목적지 중 출발지가 1곳이고 500회 이상인 곳 (비콘 후보)
+      ## 📖 개념 한 줄
+      한 번 찾은 집계는 모니터로 만든다. bucket_selector 로 '조건을 넘는 버킷'만 남기고, 버킷이 하나라도 있으면 트리거한다. Wazuh 상관 규칙은 분·시간 창의 기억이지만 모니터는 인덱스 전체(최대 1년)를 다시 센다 — 긴 창은 모니터의 몫이다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # 1) 모니터가 쓸 집계(+bucket_selector 조건)를 읽는다
+      python3 r01_baseline.py dsl MON
+
+      # 2) 같은 집계를 지금 데이터에 — 조건을 넘는 버킷만 남는다
+      python3 r01_baseline.py ask MON
+
+      # 3) Alerting 모니터 드라이런(_execute) — 등록하지 않고 트리거 판정만
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/_plugins/_alerting/monitors/_execute -d @- <<'EOF' | jq '.trigger_results | to_entries[] | {name: .value.name, triggered: .value.triggered}'
+      {"monitor":{"type":"monitor","name":"purple-r01-mon","enabled":false,"schedule":{"period":{"interval":10,"unit":"MINUTES"}},"inputs":[{"search":{"indices":["purple-r01"],"query":{"size":0,"query":{"prefix":{"data.src_ip":"10.20.40."}},"aggs":{"by_dst":{"terms":{"field":"data.dest_ip","size":50},"aggs":{"srcs":{"cardinality":{"field":"data.src_ip"}},"hit":{"bucket_selector":{"buckets_path":{"c":"_count","s":"srcs"},"script":"params.c >= 500 && params.s == 1"}}}}}}}}],"triggers":[{"name":"서버존발 외부 목적지 중 출발지가 1곳이고 500회 이상인 곳 (비콘 후보)","severity":"1","condition":{"script":{"source":"ctx.results[0].aggregations.by_dst.buckets.size() > 0","lang":"painless"}},"actions":[]}]}}
+      EOF
+
+      # 4) 등록(비활성) — Dashboard → Alerting → Monitors 에서 보고, 10분 주기로 켜 본다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' -X POST https://10.20.32.110:9200/_plugins/_alerting/monitors -d @- <<'EOF' | jq -r '._id'
+      {"type":"monitor","name":"purple-r01-mon","enabled":false,"schedule":{"period":{"interval":10,"unit":"MINUTES"}},"inputs":[{"search":{"indices":["purple-r01"],"query":{"size":0,"query":{"prefix":{"data.src_ip":"10.20.40."}},"aggs":{"by_dst":{"terms":{"field":"data.dest_ip","size":50},"aggs":{"srcs":{"cardinality":{"field":"data.src_ip"}},"hit":{"bucket_selector":{"buckets_path":{"c":"_count","s":"srcs"},"script":"params.c >= 500 && params.s == 1"}}}}}}}}],"triggers":[{"name":"서버존발 외부 목적지 중 출발지가 1곳이고 500회 이상인 곳 (비콘 후보)","severity":"1","condition":{"script":{"source":"ctx.results[0].aggregations.by_dst.buckets.size() > 0","lang":"painless"}},"actions":[]}]}
+      EOF
+      ```
+      - 트리거 조건: `ctx.results[0].aggregations.by_dst.buckets.size() > 0`
+      - 4) 실제 운영에서는 질의에 `range timestamp gte now-1h` 를 더해 최근 구간만 본다(실습 데이터는 과거라 생략).
+
+      ## ✅ 합격 기준
+      `triggered` 출력 시 통과.
+    hint: "dsl MON → ask MON → _execute"
+    category: detection
+    points: 12
+    answer: |2
+      python3 r01_baseline.py ask MON
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/_plugins/_alerting/monitors/_execute -d '{"monitor":{"type":"monitor","name":"purple-r01-mon","enabled":false,"schedule":{"period":{"interval":10,"unit":"MINUTES"}},"inputs":[{"search":{"indices":["purple-r01"],"query":{"size":0,"query":{"prefix":{"data.src_ip":"10.20.40."}},"aggs":{"by_dst":{"terms":{"field":"data.dest_ip","size":50},"aggs":{"srcs":{"cardinality":{"field":"data.src_ip"}},"hit":{"bucket_selector":{"buckets_path":{"c":"_count","s":"srcs"},"script":"params.c >= 500 && params.s == 1"}}}}}}}}],"triggers":[{"name":"서버존발 외부 목적지 중 출발지가 1곳이고 500회 이상인 곳 (비콘 후보)","severity":"1","condition":{"script":{"source":"ctx.results[0].aggregations.by_dst.buckets.size() > 0","lang":"painless"}},"actions":[]}]}}' | jq -c '.trigger_results | to_entries[] | {name: .value.name, triggered: .value.triggered}'
+    answer_detail: "모니터 = 집계 + 조건 + 주기. 서버존발 외부 목적지 중 출발지가 1곳이고 500회 이상인 곳 (비콘 후보). 결과 버킷이 정답 키와 같으면 트리거 true."
+    expected_output: |2
+      # MON
+      53.81.8.74 | 2262 | 1
+      {"name":"서버존발 외부 목적지 중 출발지가 1곳이고 500회 이상인 곳 (비콘 후보)","triggered":true}
+    verify:
+      type: output_contains
+      expect: "triggered"
+      field: stdout
+      semantic:
+        intent: "Alerting 모니터"
+        success_criteria: ["bucket_selector", "triggered true"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 6
+    instruction: |2
+      ## 🎯 목표 — 시그니처·호스트 규칙 — 네트워크·웹·호스트 층에서 같은 것을 잡을 수 있나
+      ## 📖 개념 한 줄
+      집계로 찾은 것을 각 센서의 규칙으로 옮긴다. 서명은 '한 줄·한 요청'에 강하고 분산·장기 패턴에 약하다. 검증은 실제 공격이 아니라 로그에서 재구성한 pcap·HTTP 재생·무해한 표식으로 한다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` (`cd ~/purple-agg`) — `docker cp`/`docker exec` 로 kt66-ips·kt66-web 에 적용
+
+      ```bash
+      # ── Suricata (kt66-ips) — 로그를 패킷으로 재구성해 오프라인 검사, 망에는 보내지 않는다 ──
+      # 1) 규칙 읽기 — msg·threshold·sid 96010xx
+      cat rules/r01/suricata.rules
+
+      # 2) pcap 재구성 (공격 + 같은 시간대 정상 표본)
+      python3 r01_baseline.py pcap
+
+      # 3) ips 컨테이너로 복사
+      docker cp r01.pcap kt66-ips:/tmp/r01.pcap
+      docker cp rules/r01/suricata.rules kt66-ips:/tmp/r01.rules
+
+      # 4) 오프라인 검사 — -S 로 이 규칙만 (운영 룰셋과 섞지 않음)
+      docker exec kt66-ips mkdir -p /tmp/r01-out
+      docker exec kt66-ips suricata -r /tmp/r01.pcap -S /tmp/r01.rules -k none -l /tmp/r01-out
+
+      # 5) 규칙별 경보 수
+      docker exec kt66-ips sh -c "grep -o '\[1:[0-9]*:1\] [^[]*' /tmp/r01-out/fast.log | sort | uniq -c"
+
+      # ── osquery (호스트) — 예약 쿼리 팩. 실제 공격이 없으니 결과 [] 가 정상 ──
+      # 6) 쿼리 팩 읽기
+      cat rules/r01/osquery.conf
+
+      # 7) 대표 쿼리를 즉석 실행 (kt66-web) — R01: 외부 비표준 포트로 연결된 프로세스 (비콘 후보)
+      docker exec kt66-web osqueryi --json "SELECT p.pid, p.name, p.path, s.remote_address, s.remote_port FROM process_open_sockets s JOIN processes p USING (pid) WHERE s.remote_port NOT IN (0, 53, 80, 443) AND s.remote_address NOT LIKE '10.%' AND s.remote_address NOT LIKE '127.%' AND s.state = 'ESTABLISHED';"
+      ```
+      - Suricata: threshold 는 '서명 한 줄'의 집계다. 분산·장기 패턴은 서명으로 안 잡히는 것이 정상 — 미션 2~5 의 집계와 비교한다.
+      - osquery: 운영 배포는 `/etc/osquery/osquery.conf` 의 packs 에 추가 → 결과는 osquery 결과 로그 → Wazuh(osquery 모듈)로 들어온다.
+      - Sysmon: `rules/r01/sysmon.xml` 의 RuleGroup 을 Sysmon 설정(Windows `sysmon64 -c`, Linux `sysmon -c`)에 합친다 — kt66 에 Sysmon 이 없으면 추가 설치 제안(README §6).
+
+      ## ✅ 합격 기준
+      `PURPLE R01` 출력 시 통과.
+    hint: "pcap → suricata -r / http 재생 → ModSec 로그"
+    category: detection
+    points: 12
+    answer: |2
+      python3 r01_baseline.py pcap >/dev/null && docker cp r01.pcap kt66-ips:/tmp/ && docker cp rules/r01/suricata.rules kt66-ips:/tmp/r01.rules && docker exec kt66-ips sh -c 'mkdir -p /tmp/r01-out; suricata -r /tmp/r01.pcap -S /tmp/r01.rules -k none -l /tmp/r01-out >/dev/null 2>&1; grep -o "\[1:[0-9]*:1\] [^[]*" /tmp/r01-out/fast.log | sort | uniq -c'
+    answer_detail: "규칙별 경보 수가 아래와 같으면 통과. 0 인 규칙은 이유(표본에 없음·body 없음·창 크기)를 적는다."
+    expected_output: |2
+          720 [1:9601001:1] PURPLE R01 server-zone HTTP POST to non-80 port (beacon candidate)
+           72 [1:9601002:1] PURPLE R01 Caldera sandcat beacon URI /beat
+    verify:
+      type: output_contains
+      expect: "PURPLE R01"
+      field: stdout
+      semantic:
+        intent: "시그니처 규칙 검증"
+        success_criteria: ["Suricata 오프라인", "ModSec 스텁", "osquery 즉석"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 7
+    instruction: |2
+      ## 🎯 목표 — Wazuh 복합 이벤트 — 빈도·순서 상관과 Sigma
+      ## 📖 개념 한 줄
+      단건 경보(낮은 레벨)를 쌓아 빈도 규칙(같은 IP·같은 계정·서로 다른 IP)과 순서 규칙(A 뒤 B, 같은 출발지)으로 올린다. Wazuh 의 창은 분·시간·일 — 그보다 긴 체인은 미션 5 의 모니터가 맡는다. Sigma 로 같은 규칙을 도구 중립으로 남긴다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` (`cd ~/purple-agg`) — `docker exec kt66-siem`
+
+      ```bash
+      # 1) 규칙 읽기 — 단건(level 3~6) 위에 빈도(frequency·timeframe)·순서(if_matched_sid) 상관
+      cat rules/r01/wazuh_rules.xml
+
+      # 2) 공통 디코더·재생 입력(최초 1회: R01 에서 했으면 건너뜀) — README §4
+      # 3) 규칙 올리기
+      docker cp rules/r01/wazuh_rules.xml kt66-siem:/var/ossec/etc/rules/purple_r01.xml
+
+      # 4) 문법 검사 — 오류가 없어야 재시작한다
+      docker exec kt66-siem /var/ossec/bin/wazuh-analysisd -t
+
+      # 5) 재시작
+      docker exec kt66-siem /var/ossec/bin/wazuh-control restart
+
+      # 6) 재생 파일 만들기 (공격 + 같은 시간대 정상 표본, 원래 시각 포함)
+      python3 r01_baseline.py replay
+
+      # 7) manager 로 복사 → 시간 간격을 지켜 흘려 넣기 (상관 규칙은 '도착 시각'으로 센다)
+      docker cp r01_replay.jsonl kt66-siem:/tmp/
+      docker cp rules/common/purple_log_replay.py kt66-siem:/tmp/
+      docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r01_replay.jsonl --dry
+      docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r01_replay.jsonl
+
+      # 8) 규칙별 경보 수 — 단건과 상관 규칙이 각각 몇 번 울렸나
+      docker exec kt66-siem sh -c "grep -oE 'Rule: 1901[0-9]+ \(level [0-9]+\)' /var/ossec/logs/alerts/alerts.log | sort | uniq -c"
+
+      # 9) Sigma — kt66 변환기(단건) → 부모 연결(--fix-parents) → 상관 변환
+      cp rules/r01/sigma/*.yml ~/kt66/sigma/rules/
+      python3 ~/kt66/sigma/sigma2wazuh.py ~/kt66/sigma/rules > /tmp/sigma_rules.xml
+      python3 sigma_corr2wazuh.py --fix-parents /tmp/sigma_rules.xml > /tmp/sigma_rules.fixed.xml
+      python3 sigma_corr2wazuh.py ~/kt66/sigma/rules /tmp/sigma_rules.fixed.xml > /tmp/sigma_corr_rules.xml
+      grep -c '<rule ' /tmp/sigma_rules.fixed.xml /tmp/sigma_corr_rules.xml
+      docker cp /tmp/sigma_rules.fixed.xml kt66-siem:/var/ossec/etc/rules/sigma_rules.xml
+      docker cp /tmp/sigma_corr_rules.xml kt66-siem:/var/ossec/etc/rules/sigma_corr_rules.xml
+      ```
+      - 8) N 은 재생 속도·표본에 따라 달라진다 — 단건 규칙이 먼저 울리고, 그 위에 상관 규칙이 '몇 번' 울렸는지를 적는다.
+      - 순서 규칙이 0 이면 `wazuh-logtest` 에 재생 파일의 해당 줄을 붙여 넣어 어느 규칙이 먼저 잡는지(31106·31151 등) 확인하고 if_sid 를 고친다.
+      - Sigma: kt66 변환기는 단건을 최상위 규칙으로 만든다 → 웹·sshd·Suricata 로그에서는 평가되지 않으므로 `--fix-parents` 로 부모를 연결한다.
+
+      ## ✅ 합격 기준
+      `Rule: 1901` 출력 시 통과.
+    hint: "rules → analysisd -t → restart → replay → alerts.log"
+    category: detection
+    points: 15
+    answer: |2
+      docker cp rules/r01/wazuh_rules.xml kt66-siem:/var/ossec/etc/rules/purple_r01.xml && docker exec kt66-siem /var/ossec/bin/wazuh-control restart >/dev/null && python3 r01_baseline.py replay >/dev/null && docker cp r01_replay.jsonl kt66-siem:/tmp/ && docker cp rules/common/purple_log_replay.py kt66-siem:/tmp/ && docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r01_replay.jsonl >/dev/null && docker exec kt66-siem sh -c "grep -oE 'Rule: 1901[0-9]+ \(level [0-9]+\)' /var/ossec/logs/alerts/alerts.log | sort | uniq -c"
+    answer_detail: "Wazuh 규칙: 190101 (L3) PURPLE R01: 서버존 $(src_ip) → $(dest_ip):$(dest_port) POST $(http.url); 190102 (L10) PURPLE R01: 같은 서버가 같은 외부 목적지로 하루 20회 이상 POST — 비콘 의심 $(src_ip) → $(dest_ip) [빈도 20/86400s]"
+    expected_output: |2
+      (형식 — N 은 실행마다 다름)
+      N Rule: 190101 (level 3)
+      N Rule: 190102 (level 10)
+    verify:
+      type: output_contains
+      expect: "Rule: 1901"
+      field: stdout
+      semantic:
+        intent: "Wazuh 상관 규칙 검증"
+        success_criteria: ["190101", "190102"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: siem
+
+  - order: 8
+    instruction: |2
+      ## 🎯 목표 — 대응과 라운드 카드
+      ## 📖 개념 한 줄
+      비콘 목적지는 kt66-fw 의 egress 블록리스트에, 감염 서버는 격리 후보로. 경보(190102)는 purple-ar 가 기록만 한다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` (`cd ~/purple-agg`)
+
+      ```bash
+      # 1) 이 라운드의 액티브 리스폰스 — 어떤 규칙에 무엇을 거나
+      cat rules/r01/wazuh_ar.xml
+
+      # 2) ossec.conf 에 추가 (purple-ar 명령·스크립트는 최초 1회 — README §4)
+      docker cp rules/r01/wazuh_ar.xml kt66-siem:/tmp/r01_ar.xml
+      docker exec kt66-siem sh -c "{ echo '<ossec_config>'; cat /tmp/r01_ar.xml; echo '</ossec_config>'; } >> /var/ossec/etc/ossec.conf"
+      docker exec kt66-siem /var/ossec/bin/wazuh-control restart
+
+      # 3) 재생을 한 번 더 → 대응 기록 확인 (purple-ar 은 '무엇을 했어야 하는지'만 적는다)
+      docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r01_replay.jsonl
+      docker exec kt66-siem tail -5 /var/ossec/logs/purple-ar.log
+
+      # 4) (선택) 수동 차단 — kt66-fw 의 egress 블록리스트에 목적지 추가 (가상 IP 라 실제 영향 없음)
+      docker exec kt66-fw nft add table inet purple
+      docker exec kt66-fw nft add set inet purple block4 '{ type ipv4_addr; flags timeout; }'
+      docker exec kt66-fw nft add element inet purple block4 '{ 53.81.8.74 timeout 1d }'
+      docker exec kt66-fw nft list set inet purple block4
+
+      # 5) 라운드 카드 — 집계 숫자는 미션 1~5 의 출력에서 옮긴다
+      cat > ~/purple-agg/r01_card.md <<'EOF'
+      # PURPLE-AGG R01 라운드 카드 — 가시성 베이스라인 — 정상의 모양과 서버발 비콘
+      ## 1. 질문: 정상의 모양을 집계로 재고, 그 위에서 서버발 비콘 하나를 찾는다
+      ## 2. 데이터: 총 2,444,723건 · 공격 2,262건 · 정상(배경 포함) 99.907%
+      ## 3. 집계 결과(첫 줄)
+      - Q1 이벤트 출처(에이전트)별 분포: juiceshop | 646923
+      - Q2 웹 엔드포인트별 요청 수와 서로 다른 방문 IP 수: juice.kt66.lab | 601306 | 316077
+      - Q3 주별 이벤트 추이 (7일 버킷, KST): 2026-07-30 | 80707
+      - Q4 서버존(10.20.40.x)에서 밖으로 나간 연결: 53.81.8.74 | 2262 | 1 | 75
+      - Q5 출발지 1곳뿐인 목적지(53.81.8.74): 2026-10-30 | 503
+      - Q6 같은 목적지 요청의 경로·메서드·UA 조합: /beat | Go-http-client/1.1 | 2261
+      - Q7 지금 경보(rule.level ≥ 7)는 무엇을 보고 있나: Integrity checksum changed. | 7095
+      ## 4. 규칙: Suricata 96010xx · ModSec 901xx · Wazuh 19010x · Sigma purple-r01-*
+      ## 5. 대응: 비콘 목적지는 kt66-fw 의 egress 블록리스트에, 감염 서버는 격리 후보로. 경보(190102)는 purple-ar 가 기록만 한다.
+      ## 6. 놓친 것·다음 라운드: (직접 적는다)
+      EOF
+
+      # 6) 카드 확인
+      cat ~/purple-agg/r01_card.md
+      ```
+      - 대응 대상 규칙: 190102
+      - 재생 IP 는 가상(198.51.100.x·무작위 공인 대역)이다 — 위협 인텔로 공유하지 않는다.
+      - Dashboard: 미션 2~5 의 시각화를 하나의 Dashboard 로 묶어 스크린샷을 카드에 붙인다. ![스크린샷: r01 대시보드](images/r01-dashboard.png)
+
+      ## ✅ 합격 기준
+      `라운드 카드` 출력 시 통과.
+    hint: "wazuh_ar.xml → purple-ar.log → 카드"
+    category: report
+    points: 12
+    answer: |2
+      docker exec kt66-siem tail -3 /var/ossec/logs/purple-ar.log
+      cat > ~/purple-agg/r01_card.md <<'EOF'
+      # PURPLE-AGG R01 라운드 카드 — 가시성 베이스라인 — 정상의 모양과 서버발 비콘
+      ## 1. 질문: 정상의 모양을 집계로 재고, 그 위에서 서버발 비콘 하나를 찾는다
+      ## 2. 데이터: 총 2,444,723건 · 공격 2,262건 · 정상(배경 포함) 99.907%
+      ## 3. 집계 결과(첫 줄)
+      - Q1 이벤트 출처(에이전트)별 분포: juiceshop | 646923
+      - Q2 웹 엔드포인트별 요청 수와 서로 다른 방문 IP 수: juice.kt66.lab | 601306 | 316077
+      - Q3 주별 이벤트 추이 (7일 버킷, KST): 2026-07-30 | 80707
+      - Q4 서버존(10.20.40.x)에서 밖으로 나간 연결: 53.81.8.74 | 2262 | 1 | 75
+      - Q5 출발지 1곳뿐인 목적지(53.81.8.74): 2026-10-30 | 503
+      - Q6 같은 목적지 요청의 경로·메서드·UA 조합: /beat | Go-http-client/1.1 | 2261
+      - Q7 지금 경보(rule.level ≥ 7)는 무엇을 보고 있나: Integrity checksum changed. | 7095
+      ## 4. 규칙: Suricata 96010xx · ModSec 901xx · Wazuh 19010x · Sigma purple-r01-*
+      ## 5. 대응: 비콘 목적지는 kt66-fw 의 egress 블록리스트에, 감염 서버는 격리 후보로. 경보(190102)는 purple-ar 가 기록만 한다.
+      ## 6. 놓친 것·다음 라운드: (직접 적는다)
+      EOF
+      cat ~/purple-agg/r01_card.md
+    answer_detail: "대응은 규칙→행동의 연결이다. 자동은 기록·알림까지, 계정·호스트 조치는 사람이 확인 후. 카드는 다음 라운드의 입력."
+    expected_output: |2
+      2026-11-01 10:21:07 purple-ar add rule=190102 srcip=… action=quarantine-candidate
+      # PURPLE-AGG R01 라운드 카드 — 가시성 베이스라인 — 정상의 모양과 서버발 비콘
+      ## 1. 질문: 정상의 모양을 집계로 재고, 그 위에서 서버발 비콘 하나를 찾는다
+      ## 2. 데이터: 총 2,444,723건 · 공격 2,262건 · 정상(배경 포함) 99.907%
+      ## 3. 집계 결과(첫 줄)
+      - Q1 이벤트 출처(에이전트)별 분포: juiceshop | 646923
+      - Q2 웹 엔드포인트별 요청 수와 서로 다른 방문 IP 수: juice.kt66.lab | 601306 | 316077
+      - Q3 주별 이벤트 추이 (7일 버킷, KST): 2026-07-30 | 80707
+      - Q4 서버존(10.20.40.x)에서 밖으로 나간 연결: 53.81.8.74 | 2262 | 1 | 75
+      - Q5 출발지 1곳뿐인 목적지(53.81.8.74): 2026-10-30 | 503
+      - Q6 같은 목적지 요청의 경로·메서드·UA 조합: /beat | Go-http-client/1.1 | 2261
+      - Q7 지금 경보(rule.level ≥ 7)는 무엇을 보고 있나: Integrity checksum changed. | 7095
+      ## 4. 규칙: Suricata 96010xx · ModSec 901xx · Wazuh 19010x · Sigma purple-r01-*
+      ## 5. 대응: 비콘 목적지는 kt66-fw 의 egress 블록리스트에, 감염 서버는 격리 후보로. 경보(190102)는 purple-ar 가 기록만 한다.
+      ## 6. 놓친 것·다음 라운드: (직접 적는다)
+    verify:
+      type: output_contains
+      expect: "라운드 카드"
+      field: stdout
+      semantic:
+        intent: "대응 + 라운드 카드"
+        success_criteria: ["AR 연결", "카드 작성"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host

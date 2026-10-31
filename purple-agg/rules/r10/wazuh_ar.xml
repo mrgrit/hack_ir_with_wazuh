@@ -1,0 +1,6 @@
+<active-response>
+  <command>purple-ar</command>
+  <location>server</location>
+  <rules_id>191002,191003,191004,191005,191007</rules_id>
+</active-response>
+<!-- 191006(5xx)은 자동 대응하지 않는다 — 장애일 수 있음. 판별표(lab 미션 6) 후 사람이 결정 -->

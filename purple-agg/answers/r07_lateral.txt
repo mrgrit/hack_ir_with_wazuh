@@ -1,0 +1,45 @@
+  · 외부 IP 풀 생성 중 (신규 방문자 1,000,000개)…
+===== R07 내부 이동 — 계정 하나, 서버 여러 대 — 정답 키 (기준일 2026-11-01, 기간 90일, scale 1.0, 프로파일 labeling 집계 1개 파일 · 출발지 13,543개) =====
+총 2,444,140건 · 공격 135건 · 정상(배경 포함) 99.994%
+
+# Q0 총 이벤트 수와 서로 다른 외부 출발지 IP 수
+  2444140 | 1050251
+
+# Q1 bastion 경유 서버 로그인 — 계정 × 10분 × 서로 다른 서버 수 (4대 이상만)
+  kim.minjun | 10-29 01:20 | 4
+
+# Q2 bastion 로그인 성공 — 외부 출발지 국가별 계정
+  Republic of Korea | kim.yejun | 51
+  Republic of Korea | kim.seojun | 50
+  Republic of Korea | kim.jimin | 47
+  Russia | kim.minjun | 4
+
+# Q3 서버존(10.20.40.x)으로 들어온 동서 연결 — 출발지별 포트·목적지 수
+  10.20.30.201 | 105 | 15 | 7
+  10.20.32.51 | 8304 | 2 | 6
+
+# Q4 KT66-WIN-01 로그온 성공(4624) — 유형 × 출발 IP
+  5 | - | 2199
+  2 | - | 90
+  3 | 10.20.40.83 | 3
+
+# Q5 KT66-WIN-01 레벨 8 이상 경보
+  Administrators Group Changed | svc_backup | 1
+  User account enabled or created | svc_backup | 1
+
+# Q6 kim.minjun·svc_backup·neobank발 로그온 — 10분 버킷 중 4건 이상만, 호스트별
+  10-29 01:20 | govportal | 2
+  10-29 01:20 | juiceshop | 2
+  10-29 01:20 | neobank | 2
+  10-29 01:20 | bastion | 1
+  10-29 01:20 | mediforum | 1
+  10-29 01:30 | KT66-WIN-01 | 3
+  10-29 01:30 | dvwa | 3
+  10-29 01:30 | adminconsole | 2
+  10-29 01:30 | aicompanion | 2
+  10-29 01:30 | mediforum | 1
+
+# MON 한 계정이 10분 안에 서버 4대 이상 로그인
+  kim.minjun | 10-29 01:20 | 4
+
+(계산 37초 · 서로 다른 값 수(cardinality)는 인덱서에선 근사치)

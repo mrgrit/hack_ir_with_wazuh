@@ -1,0 +1,44 @@
+<!-- R07 (id 1907xx) -->
+<group name="purple,purple_r07,">
+  <rule id="190701" level="3">
+    <if_sid>5715</if_sid>
+    <srcip>10.20.30.201</srcip>
+    <description>PURPLE R07: bastion 경유 SSH 로그인 $(dstuser)</description>
+  </rule>
+  <rule id="190702" level="12" frequency="4" timeframe="600">
+    <if_matched_sid>190701</if_matched_sid>
+    <same_user />
+    <description>PURPLE R07: 한 계정 $(dstuser) 이 10분 안에 bastion 경유로 서버 4대 이상 로그인 — 내부 확산</description>
+    <mitre><id>T1021.004</id></mitre>
+    <group>attack,lateral_movement,</group>
+  </rule>
+  <rule id="190703" level="12">
+    <if_sid>5715</if_sid>
+    <hostname>^bastion$</hostname>
+    <srcip>!10.0.0.0/8</srcip>
+    <description>PURPLE R07: 외부 IP $(srcip) 에서 bastion 직접 로그인 $(dstuser)</description>
+    <mitre><id>T1133</id></mitre>
+  </rule>
+  <rule id="190704" level="10">
+    <if_sid>60106</if_sid>
+    <field name="win.eventdata.logonType">^3$</field>
+    <field name="win.eventdata.ipAddress" type="pcre2">^10\.20\.40\.</field>
+    <description>PURPLE R07: 서버존에서 사용자 PC 로 네트워크 로그온(유형 3) $(win.eventdata.targetUserName)</description>
+    <mitre><id>T1021.002</id></mitre>
+  </rule>
+  <rule id="190705" level="13">
+    <if_group>windows</if_group>
+    <field name="win.system.eventID">^4688$</field>
+    <field name="win.eventdata.newProcessName" type="pcre2">(?i)\\PSEXESVC\.exe$|\\cmd\.exe$</field>
+    <field name="win.eventdata.parentProcessName" type="pcre2">(?i)\\services\.exe$|\\PSEXESVC\.exe$</field>
+    <description>PURPLE R07: 원격 서비스 실행(PsExec 계열) $(win.eventdata.newProcessName)</description>
+    <mitre><id>T1569.002</id></mitre>
+  </rule>
+  <rule id="190706" level="15" timeframe="900">
+    <if_sid>60154</if_sid>
+    <if_matched_sid>190704</if_matched_sid>
+    <description>PURPLE R07: 서버발 네트워크 로그온 15분 안에 관리자 그룹 변경 — 내부 이동 후 지속성</description>
+    <mitre><id>T1098</id></mitre>
+    <group>attack,lateral_movement,</group>
+  </rule>
+</group>

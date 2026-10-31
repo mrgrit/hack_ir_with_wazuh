@@ -1,0 +1,6 @@
+<!-- ossec.conf 에 한 번 추가: 퍼플 모의 대응 명령. 라운드별 <active-response> 는 각 rules/rNN/wazuh_ar.xml -->
+<command>
+  <name>purple-ar</name>
+  <executable>purple-ar.sh</executable>
+  <timeout_allowed>no</timeout_allowed>
+</command>

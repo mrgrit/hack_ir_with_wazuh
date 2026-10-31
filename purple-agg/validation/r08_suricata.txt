@@ -1,0 +1,2 @@
+      9 [1:9608001:1] PURPLE R08 DNS tunnel - 40+ hex char label
+     94 [1:9608002:1] PURPLE R08 user zone to external 8443 (non-standard TLS)

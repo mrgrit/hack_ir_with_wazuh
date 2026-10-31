@@ -1,0 +1,53 @@
+<!-- R10 (id 1910xx) — FIM 폭주 · 랜섬 안내문 · 변조 · 5xx 폭주 · 마이닝 -->
+<group name="purple,purple_r10,">
+  <rule id="191001" level="7">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">\.kt66lock$|\.(locked|encrypted|crypt)$</field>
+    <description>PURPLE R10: 암호화 확장자 파일 생성 $(file)</description>
+    <mitre><id>T1486</id></mitre>
+  </rule>
+  <rule id="191002" level="15" frequency="50" timeframe="120">
+    <if_matched_sid>191001</if_matched_sid>
+    <description>PURPLE R10: 2분에 암호화 확장자 파일 50개 이상 — 랜섬웨어 암호화 진행 중</description>
+    <mitre><id>T1486</id></mitre>
+    <group>attack,impact,</group>
+  </rule>
+  <rule id="191003" level="12">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">(?i)README_RESTORE|HOW_TO_DECRYPT|RECOVER_FILES</field>
+    <description>PURPLE R10: 랜섬 안내문 생성 $(file)</description>
+    <mitre><id>T1486</id></mitre>
+  </rule>
+  <rule id="191004" level="12" frequency="100" timeframe="120">
+    <if_matched_sid>553</if_matched_sid>
+    <description>PURPLE R10: 2분에 파일 삭제 100건 이상 — 대량 삭제</description>
+    <mitre><id>T1485</id></mitre>
+  </rule>
+  <rule id="191005" level="12">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">/(templates/)?index\.(html|php)$</field>
+    <description>PURPLE R10: 첫 화면 파일 변경 $(file) — 웹 변조 의심</description>
+    <mitre><id>T1491.002</id></mitre>
+  </rule>
+  <!-- neobank 는 시간당 약 260건 — 장애 시 5xx 는 분당 3~4건. 임계값은 서비스 규모(집계 Q3)에 맞춘다 -->
+  <rule id="191006" level="8" frequency="20" timeframe="600">
+    <if_matched_sid>31120</if_matched_sid>
+    <same_location />
+    <description>PURPLE R10: 10분에 5xx 20건 이상 — 가용성 이상 (공격·장애 판별은 집계로)</description>
+    <group>availability,</group>
+  </rule>
+  <rule id="191007" level="10">
+    <if_sid>86600</if_sid>
+    <field name="event_type">^flow$</field>
+    <field name="dest_port">^(3333|4444|5555|7777|14444)$</field>
+    <field name="src_ip" type="pcre2">^10\.20\.</field>
+    <description>PURPLE R10: 내부 $(src_ip) → 마이닝 풀 포트 $(dest_ip):$(dest_port)</description>
+    <mitre><id>T1496</id></mitre>
+  </rule>
+  <rule id="191008" level="10">
+    <decoded_as>kt66-dns</decoded_as>
+    <field name="query" type="pcre2">(?i)(minexmr|xmrpool|nanopool|supportxmr|2miners)</field>
+    <description>PURPLE R10: 마이닝 풀 도메인 질의 $(query) from $(srcip)</description>
+    <mitre><id>T1496</id></mitre>
+  </rule>
+</group>

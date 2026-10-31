@@ -1,0 +1,61 @@
+  · 외부 IP 풀 생성 중 (신규 방문자 1,000,000개)…
+===== R04 실행·지속성 — 수천 건 속 한 건 — 정답 키 (기준일 2026-11-01, 기간 90일, scale 1.0, 프로파일 labeling 집계 1개 파일 · 출발지 13,543개) =====
+총 2,457,124건 · 공격 997건 · 정상(배경 포함) 99.959%
+
+# Q0 총 이벤트 수와 서로 다른 외부 출발지 IP 수
+  2457124 | 1048147
+
+# Q1 파일 추가(FIM 554) — 업로드 폴더 확장자별
+  1_jpg | 871
+  2_png | 432
+  3_pdf | 408
+  4_php | 1
+
+# Q2 auditd — 부모 프로세스 × 실행 파일 쌍
+  /usr/sbin/cron | /usr/bin/php | 12142
+  /usr/sbin/cron | /tmp/.x/update.sh | 937
+  /usr/bin/bash | /usr/bin/systemctl | 1114
+  /usr/bin/bash | /usr/bin/top | 1108
+  /usr/bin/bash | /usr/bin/tail | 1072
+  /usr/bin/bash | /usr/bin/journalctl | 1066
+  /usr/sbin/apache2 | /bin/sh | 25
+
+# Q3 업로드 폴더의 .php 를 호출한 IP
+  70.246.138.5 | 25 | 21
+
+# Q4 /etc · /root 아래 파일 변경(FIM)과 계정 생성
+  mediforum | Integrity checksum changed. | 5
+  mediforum | File added to the system. | 1
+  mediforum | New user added to the system. | 1
+
+# Q5 cron 이 실행한 파일 — 건수와 처음·마지막 시각
+  /usr/bin/php | 12142 | 6 | 08-03 00:05 | 10-31 23:48
+  /tmp/.x/update.sh | 937 | 1 | 09-22 23:00 | 10-31 23:00
+
+# Q6 mediforum 침투 첫날 타임라인 — 10분 단위 (웹셸 호출·auditd·FIM·계정)
+  09-22 22:00 | syscheck_new_entry | 1
+  09-22 22:00 | web-accesslog | 1
+  09-22 22:10 | auditd | 4
+  09-22 22:10 | web-accesslog | 4
+  09-22 22:20 | auditd | 7
+  09-22 22:20 | web-accesslog | 7
+  09-22 22:30 | auditd | 5
+  09-22 22:30 | web-accesslog | 5
+  09-22 22:30 | syscheck_integrity_changed | 4
+  09-22 22:30 | syscheck_new_entry | 1
+  09-22 22:40 | auditd | 2
+  09-22 22:40 | web-accesslog | 2
+  09-22 22:40 | syscheck_integrity_changed | 1
+  09-26 16:00 | auditd | 1
+
+# Q7 웹셸 호출 IP 의 주별 접근 횟수 (장기 잠복)
+  2026-09-17 | 18
+  2026-09-24 | 2
+  2026-10-01 | 3
+  2026-10-08 | 1
+  2026-10-22 | 1
+
+# MON 웹서버 프로세스(apache2)가 셸을 실행한 호스트
+  mediforum | 25
+
+(계산 44초 · 서로 다른 값 수(cardinality)는 인덱서에선 근사치)

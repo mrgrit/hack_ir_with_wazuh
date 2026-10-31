@@ -1,0 +1,2 @@
+     25 [1:9604001:1] PURPLE R04 PHP executed from uploads directory
+     15 [1:9604002:1] PURPLE R04 webshell command parameter (c=)

@@ -1,0 +1,75 @@
+  · 외부 IP 풀 생성 중 (신규 방문자 1,000,000개)…
+===== R02 정찰·탐색 — 넓게 훑는 IP 찾기 — 정답 키 (기준일 2026-11-01, 기간 90일, scale 1.0, 프로파일 labeling 집계 1개 파일 · 출발지 13,543개) =====
+총 2,441,323건 · 공격 1,676건 · 정상(배경 포함) 99.931%
+
+# Q0 총 이벤트 수와 서로 다른 외부 출발지 IP 수
+  2441323 | 1047542
+
+# Q1 웹 요청 수 상위 10 IP — 많이 온 IP 는 누구인가
+  196.112.185.106 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 | 9859
+  36.7.157.250 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 | 4737
+  187.107.249.198 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 | 3088
+  215.193.57.7 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 | 2271
+  7.136.73.90 | Pingdom.com_bot_version_1.4_(http://www.pingdom.com/) | 6267
+  198.200.89.99 | Pingdom.com_bot_version_1.4_(http://www.pingdom.com/) | 6258
+  163.218.135.80 | Mozilla/5.0+(compatible; UptimeRobot/2.0; http://www.uptimerobot.com/) | 6162
+  163.4.251.34 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 | 1810
+  167.99.66.165 | Mozilla/5.0+(compatible; UptimeRobot/2.0; http://www.uptimerobot.com/) | 5985
+  21.177.235.205 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 | 1522
+
+# Q2 404 응답을 가장 많이 받은 IP 상위 5
+  221.49.17.120 | 341
+  196.112.185.106 | 119
+  15.80.134.2 | 69
+  150.173.171.62 | 62
+  135.89.117.84 | 61
+
+# Q3 404 IP 별 서로 다른 URL 수·vhost 수 (고유 URL 순)
+  221.49.17.120 | 341 | 241 | 2
+  196.112.185.106 | 119 | 102 | 4
+  15.80.134.2 | 69 | 69 | 3
+  150.173.171.62 | 62 | 62 | 3
+  135.89.117.84 | 61 | 61 | 3
+
+# Q4 neobank API(/api/) 404 — 경로별 서로 다른 IP 수
+  /api/v1/admin/users | 226 | 226
+  /api/v1/accounts/export?format=csv | 218 | 218
+  /api/history?page=15 | 49 | 49
+  /api/history?page=2 | 45 | 45
+  /api/history?page=16 | 44 | 44
+
+# Q5 숨은 API 경로를 두드린 IP 들의 국가 분포
+  China | 142 | 92
+  India | 113 | 77
+  Vietnam | 102 | 70
+  Brazil | 87 | 61
+
+# Q6 방화벽 차단(DROP) — IP 별 서로 다른 포트·목적지 수·활동 일수
+  142.66.143.170 | 873 | 98 | 8 | 55
+  136.36.241.64 | 12 | 10 | 8 | 12
+  154.48.174.222 | 11 | 10 | 7 | 11
+  138.147.107.170 | 10 | 9 | 7 | 9
+  30.248.117.242 | 10 | 9 | 5 | 10
+
+# Q7 두 정찰 IP(142.66.143.170, 221.49.17.120)의 일별 활동 (일 단위, 많은 날 순)
+  2026-10-12 | kt66-nft | 768
+  2026-10-12 | json | 12
+  2026-10-28 | web-accesslog | 240
+  2026-09-15 | web-accesslog | 40
+  2026-10-03 | web-accesslog | 25
+  2026-10-03 | kt66-nft | 1
+  2026-10-20 | web-accesslog | 26
+  2026-09-05 | web-accesslog | 16
+
+# Q8 404 고유 URL 상위 IP 의 활동 일수·처음·마지막 (장기 정찰 판별)
+  221.49.17.120 | 241 | 5 | 2026-09-05 | 2026-10-28
+  196.112.185.106 | 102 | 63 | 2026-08-03 | 2026-10-31
+  15.80.134.2 | 69 | 51 | 2026-08-03 | 2026-10-31
+  150.173.171.62 | 62 | 48 | 2026-08-03 | 2026-10-31
+  135.89.117.84 | 61 | 47 | 2026-08-03 | 2026-10-31
+
+# MON 404 를 받은 서로 다른 URL 이 100개 이상인 IP
+  221.49.17.120 | 341 | 241
+  196.112.185.106 | 119 | 102
+
+(계산 80초 · 서로 다른 값 수(cardinality)는 인덱서에선 근사치)

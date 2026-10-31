@@ -1,0 +1,9 @@
+<!-- Sysmon for Linux (juiceshop) -->
+<RuleGroup name="purple_r13" groupRelation="or">
+  <ProcessCreate onmatch="include">
+    <Rule name="R13 node spawns shell" groupRelation="and">
+      <ParentImage condition="end with">/node</ParentImage>
+      <Image condition="end with any">/sh;/bash;/dash</Image>
+    </Rule>
+  </ProcessCreate>
+</RuleGroup>

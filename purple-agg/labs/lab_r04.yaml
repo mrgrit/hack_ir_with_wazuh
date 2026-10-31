@@ -1,0 +1,614 @@
+lab_id: purple-agg-r04
+title: "퍼플 집계 R04 — 실행·지속성 — 수천 건 속 한 건"
+version: purple-agg-1
+course: purple-agg
+week: 4
+description: |
+  R04 실행·지속성 — 업로드 이미지 수천 장 속 PHP 한 개, cron 실행 수만 건 속 /tmp 스크립트 하나.
+
+  Red(로그로만 재현) — 공격자 W, 표적 mediforum(10.20.40.85)
+    1) 이미지로 위장한 웹셸 업로드(FIM 554) → 2) 웹셸로 명령 실행(웹 GET + auditd: apache2 → sh)
+    3) 지속성: 계정 생성(5902)·/etc/passwd·shadow 변경·cron.d 추가·root authorized_keys·rc.local
+    4) cron 이 10분마다 /tmp/.x/update.sh 실행 (auditd)
+  Blue: 업로드 FIM 확장자 분포 → 부모-자식 프로세스 쌍 → 업로드 경로 PHP 호출 IP → /etc·/root 변경 → 주기 실행 → 타임라인
+
+  실제 공격은 하지 않는다. 생성기가 만든 로그(정상 99.9% + 공격)를 인덱서에 적재해 집계로 찾고, 같은 판단을 Suricata·ModSecurity·Wazuh·Sigma·osquery 규칙과 모니터로 자동화한 뒤 대응한다. 명령은 한 줄씩 — answer 의 연결 명령은 자동 채점용.
+difficulty: medium
+duration_minutes: 180
+prerequisites:
+  - "kt66 설치·기동 + Wazuh 인덱서 https://10.20.32.110:9200 접근 (admin)"
+  - "~/purple-agg 번들 배치 (README §1~4 최초 설정)"
+  - "jq, python3"
+objectives:
+  - "FIM 554(추가)를 확장자별로 집계해 업로드 폴더의 스크립트를 찾는다"
+  - "auditd 부모×실행 파일 쌍 집계로 '웹서버가 셸을 띄운' 드문 쌍을 찾는다"
+  - "웹셸 호출 IP 의 주별 접근으로 장기 잠복을 확인한다"
+  - "ModSecurity(업로드·실행 차단)·Wazuh(웹셸→계정 생성 순서)·osquery·Sysmon 규칙으로 자동화한다"
+pass_threshold: 0.7
+steps:
+
+  - order: 1
+    instruction: |2
+      ## 🎯 목표 — 데이터 적재와 정상의 모양 — 파일 추가(FIM 554) — 업로드 폴더 확장자별
+      ## 📖 개념 한 줄
+      정상의 크기를 먼저 잰다. 업로드 폴더에는 이미지가 쌓인다 — 확장자 분포에서 .php 한 줄이 튄다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # 1) 인덱서 연결 확인 — 클러스터 이름·버전, 이미 있는 purple-* 인덱스
+      python3 r04_persistence.py check
+
+      # 2) 로그 생성·적재 — 90일, 엔드포인트 10곳 정상 99.9% + 공격 (실제 공격 없음, 수 분)
+      python3 r04_persistence.py gen --anchor 2026-11-01
+
+      # 3) 적재 건수 확인 — 총 이벤트 수 | 서로 다른 외부 IP 수 (Q0)
+      python3 r04_persistence.py ask Q0
+
+      # 4) Dashboard: Stack Management → Index Patterns → purple-* (시간 필드 timestamp) — 있으면 건너뜀
+      # 5) Discover 에서 purple-r04 · 기간 2026-08-01 ~ 2026-11-01 로 맞춘다
+
+      # 6) Q1 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r04_persistence.py dsl Q1
+
+      # 7) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r04/_search -d @- <<'EOF' | jq -r '.aggregations.ext.buckets | to_entries[] | {key} + .value | "\(.key) | \(.doc_count)"'
+      {"size":0,"query":{"bool":{"filter":[{"term":{"rule.id":"554"}},{"wildcard":{"syscheck.path":"/var/www/*/uploads/*"}}]}},"aggs":{"ext":{"filters":{"filters":{"1_jpg":{"wildcard":{"syscheck.path":"*.jpg"}},"2_png":{"wildcard":{"syscheck.path":"*.png"}},"3_pdf":{"wildcard":{"syscheck.path":"*.pdf"}},"4_php":{"wildcard":{"syscheck.path":"*.php"}}}}}}}
+      EOF
+
+      # 8) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r04_persistence.py ask Q1
+      ```
+      - 2) 기준일 `2026-11-01` 로 고정해야 정답 키와 숫자가 같다(다른 날짜면 분포는 같고 시각만 밀린다).
+      - 시각화: Split rows: Filters (1_jpg / 2_png / 3_pdf / 4_php) · 필터 `rule.id:"554" and syscheck.path:/var/www/*/uploads/*`
+
+      ## ✅ 합격 기준
+      `1_jpg` 출력 시 통과.
+    hint: "gen → ask Q0 → Q1"
+    category: survey
+    points: 10
+    answer: |2
+      # 1) 생성·적재 (기준일 고정)
+      python3 r04_persistence.py gen --anchor 2026-11-01 >/dev/null && python3 r04_persistence.py ask Q0
+      # 2) 정상의 모양
+      python3 r04_persistence.py ask Q1
+    answer_detail: "총 2,457,124건 · 공격 997건 · 정상(배경 포함) 99.959% — 정상이 99.9% 인 데이터에서 '정상의 모양'을 먼저 기록한다. 업로드 폴더에는 이미지가 쌓인다 — 확장자 분포에서 .php 한 줄이 튄다."
+    expected_output: |2
+      # Q0
+      2457124 | 1048147
+      # Q1
+      1_jpg | 871
+      2_png | 432
+      3_pdf | 408
+      4_php | 1
+    verify:
+      type: output_contains
+      expect: "1_jpg"
+      field: stdout
+      semantic:
+        intent: "적재 + 정상 기준선"
+        success_criteria: ["인덱스 purple-r04", "Q0 건수", "Q1 분포"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 2
+    instruction: |2
+      ## 🎯 목표 — auditd · 업로드 폴더의 .php 를 호출한 IP
+      ## 📖 개념 한 줄
+      **Q2** 부모×자식 쌍은 대부분 몇 가지로 고정된다. apache2→sh 는 정상에 없다.
+      **Q3** 그 .php 를 부른 IP 는 하나 — 업로드한 IP 와 같은가?
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # ── Q2 auditd — 부모 프로세스 × 실행 파일 쌍 ──
+      # 1) Q2 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r04_persistence.py dsl Q2
+
+      # 2) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r04/_search -d @- <<'EOF' | jq -r '.aggregations.parent.buckets[] | .key as $k | .exe.buckets[] | "\($k) | \(.key) | \(.doc_count)"'
+      {"size":0,"query":{"term":{"decoder.name":"auditd"}},"aggs":{"parent":{"terms":{"field":"data.audit.parent","size":5},"aggs":{"exe":{"terms":{"field":"data.audit.exe","size":4}}}}}}
+      EOF
+
+      # 3) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r04_persistence.py ask Q2
+
+      # ── Q3 업로드 폴더의 .php 를 호출한 IP ──
+      # 4) Q3 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r04_persistence.py dsl Q3
+
+      # 5) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r04/_search -d @- <<'EOF' | jq -r '.aggregations.by_ip.buckets[] | "\(.key) | \(.doc_count) | \(.urls.value)"'
+      {"size":0,"query":{"bool":{"filter":[{"term":{"decoder.name":"web-accesslog"}},{"wildcard":{"data.url":"/uploads/*.php*"}}]}},"aggs":{"by_ip":{"terms":{"field":"data.srcip","size":5},"aggs":{"urls":{"cardinality":{"field":"data.url"}}}}}}
+      EOF
+
+      # 6) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r04_persistence.py ask Q3
+      ```
+      - Q2 시각화: Split rows: Terms `data.audit.parent` size 5 → Split rows: Terms `data.audit.exe` size 4 · 필터 `decoder.name:"auditd"`
+      - Q3 시각화: Split rows: Terms `data.srcip` size 5 → Metric: Unique Count `data.url` · 필터 `decoder.name:"web-accesslog" and data.url:/uploads/*.php*`
+
+      ## ✅ 합격 기준
+      `70.246.138.5` 출력 시 통과.
+    hint: "Q2 / Q3"
+    category: analysis
+    points: 13
+    answer: |2
+      # Q2 auditd — 부모 프로세스 × 실행 파일 쌍
+      python3 r04_persistence.py ask Q2
+      # Q3 업로드 폴더의 .php 를 호출한 IP
+      python3 r04_persistence.py ask Q3
+    answer_detail: "Q2: 부모×자식 쌍은 대부분 몇 가지로 고정된다. apache2→sh 는 정상에 없다. Q3: 그 .php 를 부른 IP 는 하나 — 업로드한 IP 와 같은가?"
+    expected_output: |2
+      # Q2
+      /usr/sbin/cron | /usr/bin/php | 12142
+      /usr/sbin/cron | /tmp/.x/update.sh | 937
+      /usr/bin/bash | /usr/bin/systemctl | 1114
+      /usr/bin/bash | /usr/bin/top | 1108
+      /usr/bin/bash | /usr/bin/tail | 1072
+      /usr/bin/bash | /usr/bin/journalctl | 1066
+      /usr/sbin/apache2 | /bin/sh | 25
+      # Q3
+      70.246.138.5 | 25 | 21
+    verify:
+      type: output_contains
+      expect: "70.246.138.5"
+      field: stdout
+      semantic:
+        intent: "탐지 집계"
+        success_criteria: ["Q2", "Q3"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 3
+    instruction: |2
+      ## 🎯 목표 — /etc · /root 아래 파일 변경(FIM)과 계정 생성 · cron 이 실행한 파일
+      ## 📖 개념 한 줄
+      **Q4** /etc·/root 변경과 계정 생성이 웹셸 호출 뒤에 붙어 있으면 지속성 확보다.
+      **Q5** cron 이 실행한 파일의 처음·마지막 — 몇 주 동안 살아 있었나.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # ── Q4 /etc · /root 아래 파일 변경(FIM)과 계정 생성 ──
+      # 1) Q4 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r04_persistence.py dsl Q4
+
+      # 2) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r04/_search -d @- <<'EOF' | jq -r '.aggregations.by_agent.buckets[] | .key as $k | .what.buckets[] | "\($k) | \(.key) | \(.doc_count)"'
+      {"size":0,"query":{"bool":{"should":[{"prefix":{"syscheck.path":"/etc/"}},{"prefix":{"syscheck.path":"/root/"}},{"term":{"rule.id":"5902"}}]}},"aggs":{"by_agent":{"terms":{"field":"agent.name","size":3},"aggs":{"what":{"terms":{"field":"rule.description","size":4}}}}}}
+      EOF
+
+      # 3) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r04_persistence.py ask Q4
+
+      # ── Q5 cron 이 실행한 파일 — 건수와 처음·마지막 시각 ──
+      # 4) Q5 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r04_persistence.py dsl Q5
+
+      # 5) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r04/_search -d @- <<'EOF' | jq -r '.aggregations.exe.buckets[] | "\(.key) | \(.doc_count) | \(.hosts.value) | \(.first.value/1000+32400|floor|strftime("%m-%d %H:%M")) | \(.last.value/1000+32400|floor|strftime("%m-%d %H:%M"))"'
+      {"size":0,"query":{"term":{"data.audit.parent":"/usr/sbin/cron"}},"aggs":{"exe":{"terms":{"field":"data.audit.exe","size":3},"aggs":{"first":{"min":{"field":"timestamp"}},"last":{"max":{"field":"timestamp"}},"hosts":{"cardinality":{"field":"agent.name"}}}}}}
+      EOF
+
+      # 6) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r04_persistence.py ask Q5
+      ```
+      - Q4 시각화: Split rows: Terms `agent.name` size 3 → Split rows: Terms `rule.description` size 4 · 필터 `(syscheck.path:/etc/* or syscheck.path:/root/* or rule.id:"5902")`
+      - Q5 시각화: Split rows: Terms `data.audit.exe` size 3 → Metric: Min `timestamp` → Metric: Max `timestamp` → Metric: Unique Count `agent.name` · 필터 `data.audit.parent:"/usr/sbin/cron"`
+
+      ## ✅ 합격 기준
+      `/usr/bin/php` 출력 시 통과.
+    hint: "Q4 / Q5"
+    category: analysis
+    points: 13
+    answer: |2
+      # Q4 /etc · /root 아래 파일 변경(FIM)과 계정 생성
+      python3 r04_persistence.py ask Q4
+      # Q5 cron 이 실행한 파일 — 건수와 처음·마지막 시각
+      python3 r04_persistence.py ask Q5
+    answer_detail: "Q4: /etc·/root 변경과 계정 생성이 웹셸 호출 뒤에 붙어 있으면 지속성 확보다. Q5: cron 이 실행한 파일의 처음·마지막 — 몇 주 동안 살아 있었나."
+    expected_output: |2
+      # Q4
+      mediforum | Integrity checksum changed. | 5
+      mediforum | File added to the system. | 1
+      mediforum | New user added to the system. | 1
+      # Q5
+      /usr/bin/php | 12142 | 6 | 08-03 00:05 | 10-31 23:48
+      /tmp/.x/update.sh | 937 | 1 | 09-22 23:00 | 10-31 23:00
+    verify:
+      type: output_contains
+      expect: "/usr/bin/php"
+      field: stdout
+      semantic:
+        intent: "탐지 집계"
+        success_criteria: ["Q4", "Q5"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 4
+    instruction: |2
+      ## 🎯 목표 — mediforum 침투 첫날 타임라인 · 웹셸 호출 IP 의 주별 접근 횟수 (장기 잠복)
+      ## 📖 개념 한 줄
+      **Q6** 10분 버킷 타임라인 — 웹셸·auditd·FIM·계정 이벤트가 같은 칸에 모인다.
+      **Q7** 웹셸 호출 IP 의 주별 접근 — 한 번 쓰고 버리지 않고 몇 주에 걸쳐 돌아온다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # ── Q6 mediforum 침투 첫날 타임라인 — 10분 단위 (웹셸 호출·auditd·FIM·계정) ──
+      # 1) Q6 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r04_persistence.py dsl Q6
+
+      # 2) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r04/_search -d @- <<'EOF' | jq -r '.aggregations.t.buckets[] | .key_as_string as $k | .what.buckets[] | "\($k) | \(.key) | \(.doc_count)"' | head -14
+      {"size":0,"query":{"bool":{"filter":[{"term":{"agent.name":"mediforum"}}],"should":[{"term":{"data.srcip":"70.246.138.5"}},{"term":{"data.audit.parent":"/usr/sbin/apache2"}},{"prefix":{"syscheck.path":"/etc/"}},{"prefix":{"syscheck.path":"/root/"}},{"wildcard":{"syscheck.path":"*.php"}},{"term":{"rule.id":"5902"}}],"minimum_should_match":1}},"aggs":{"t":{"date_histogram":{"field":"timestamp","fixed_interval":"10m","time_zone":"+09:00","format":"MM-dd HH:mm","min_doc_count":1},"aggs":{"what":{"terms":{"field":"decoder.name","size":4}}}}}}
+      EOF
+
+      # 3) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r04_persistence.py ask Q6
+
+      # ── Q7 웹셸 호출 IP 의 주별 접근 횟수 (장기 잠복) ──
+      # 4) Q7 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r04_persistence.py dsl Q7
+
+      # 5) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r04/_search -d @- <<'EOF' | jq -r '.aggregations.w.buckets[] | "\(.key_as_string) | \(.doc_count)"'
+      {"size":0,"query":{"bool":{"filter":[{"term":{"decoder.name":"web-accesslog"}},{"wildcard":{"data.url":"/uploads/*.php*"}}]}},"aggs":{"w":{"date_histogram":{"field":"timestamp","fixed_interval":"7d","time_zone":"+09:00","format":"yyyy-MM-dd","min_doc_count":1}}}}
+      EOF
+
+      # 6) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r04_persistence.py ask Q7
+      ```
+      - Q6 시각화: Split rows: Date Histogram `timestamp` 간격 10m → Split rows: Terms `decoder.name` size 4 · 필터 `agent.name:"mediforum" and (data.srcip:"70.246.138.5" or data.audit.parent:"/usr/sbin/apache2" or syscheck.path:/etc/* or syscheck.path:/root/* or syscheck.path:*.php or rule.id:"5902")`
+      - Q7 시각화: Split rows: Date Histogram `timestamp` 간격 7d · 필터 `decoder.name:"web-accesslog" and data.url:/uploads/*.php*`
+
+      ## ✅ 합격 기준
+      `2026-09-17` 출력 시 통과.
+    hint: "Q6 / Q7"
+    category: analysis
+    points: 13
+    answer: |2
+      # Q6 mediforum 침투 첫날 타임라인 — 10분 단위 (웹셸 호출·auditd·FIM·계정)
+      python3 r04_persistence.py ask Q6
+      # Q7 웹셸 호출 IP 의 주별 접근 횟수 (장기 잠복)
+      python3 r04_persistence.py ask Q7
+    answer_detail: "Q6: 10분 버킷 타임라인 — 웹셸·auditd·FIM·계정 이벤트가 같은 칸에 모인다. Q7: 웹셸 호출 IP 의 주별 접근 — 한 번 쓰고 버리지 않고 몇 주에 걸쳐 돌아온다."
+    expected_output: |2
+      # Q6
+      09-22 22:00 | syscheck_new_entry | 1
+      09-22 22:00 | web-accesslog | 1
+      09-22 22:10 | auditd | 4
+      09-22 22:10 | web-accesslog | 4
+      09-22 22:20 | auditd | 7
+      09-22 22:20 | web-accesslog | 7
+      09-22 22:30 | auditd | 5
+      09-22 22:30 | web-accesslog | 5
+      09-22 22:30 | syscheck_integrity_changed | 4
+      09-22 22:30 | syscheck_new_entry | 1
+      …
+      # Q7
+      2026-09-17 | 18
+      2026-09-24 | 2
+      2026-10-01 | 3
+      2026-10-08 | 1
+      2026-10-22 | 1
+    verify:
+      type: output_contains
+      expect: "2026-09-17"
+      field: stdout
+      semantic:
+        intent: "탐지 집계"
+        success_criteria: ["Q6", "Q7"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 5
+    instruction: |2
+      ## 🎯 목표 — 지속 탐지 — 모니터: 웹서버 프로세스(apache2)가 셸을 실행한 호스트
+      ## 📖 개념 한 줄
+      한 번 찾은 집계는 모니터로 만든다. bucket_selector 로 '조건을 넘는 버킷'만 남기고, 버킷이 하나라도 있으면 트리거한다. Wazuh 상관 규칙은 분·시간 창의 기억이지만 모니터는 인덱스 전체(최대 1년)를 다시 센다 — 긴 창은 모니터의 몫이다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # 1) 모니터가 쓸 집계(+bucket_selector 조건)를 읽는다
+      python3 r04_persistence.py dsl MON
+
+      # 2) 같은 집계를 지금 데이터에 — 조건을 넘는 버킷만 남는다
+      python3 r04_persistence.py ask MON
+
+      # 3) Alerting 모니터 드라이런(_execute) — 등록하지 않고 트리거 판정만
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/_plugins/_alerting/monitors/_execute -d @- <<'EOF' | jq '.trigger_results | to_entries[] | {name: .value.name, triggered: .value.triggered}'
+      {"monitor":{"type":"monitor","name":"purple-r04-mon","enabled":false,"schedule":{"period":{"interval":10,"unit":"MINUTES"}},"inputs":[{"search":{"indices":["purple-r04"],"query":{"size":0,"query":{"bool":{"filter":[{"term":{"data.audit.parent":"/usr/sbin/apache2"}},{"terms":{"data.audit.exe":["/bin/sh","/bin/bash","/usr/bin/bash","/bin/dash"]}}]}},"aggs":{"by_agent":{"terms":{"field":"agent.name","size":20},"aggs":{"hit":{"bucket_selector":{"buckets_path":{"c":"_count"},"script":"params.c >= 1"}}}}}}}}],"triggers":[{"name":"웹서버 프로세스(apache2)가 셸을 실행한 호스트","severity":"1","condition":{"script":{"source":"ctx.results[0].aggregations.by_agent.buckets.size() > 0","lang":"painless"}},"actions":[]}]}}
+      EOF
+
+      # 4) 등록(비활성) — Dashboard → Alerting → Monitors 에서 보고, 10분 주기로 켜 본다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' -X POST https://10.20.32.110:9200/_plugins/_alerting/monitors -d @- <<'EOF' | jq -r '._id'
+      {"type":"monitor","name":"purple-r04-mon","enabled":false,"schedule":{"period":{"interval":10,"unit":"MINUTES"}},"inputs":[{"search":{"indices":["purple-r04"],"query":{"size":0,"query":{"bool":{"filter":[{"term":{"data.audit.parent":"/usr/sbin/apache2"}},{"terms":{"data.audit.exe":["/bin/sh","/bin/bash","/usr/bin/bash","/bin/dash"]}}]}},"aggs":{"by_agent":{"terms":{"field":"agent.name","size":20},"aggs":{"hit":{"bucket_selector":{"buckets_path":{"c":"_count"},"script":"params.c >= 1"}}}}}}}}],"triggers":[{"name":"웹서버 프로세스(apache2)가 셸을 실행한 호스트","severity":"1","condition":{"script":{"source":"ctx.results[0].aggregations.by_agent.buckets.size() > 0","lang":"painless"}},"actions":[]}]}
+      EOF
+      ```
+      - 트리거 조건: `ctx.results[0].aggregations.by_agent.buckets.size() > 0`
+      - 4) 실제 운영에서는 질의에 `range timestamp gte now-1h` 를 더해 최근 구간만 본다(실습 데이터는 과거라 생략).
+
+      ## ✅ 합격 기준
+      `triggered` 출력 시 통과.
+    hint: "dsl MON → ask MON → _execute"
+    category: detection
+    points: 12
+    answer: |2
+      python3 r04_persistence.py ask MON
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/_plugins/_alerting/monitors/_execute -d '{"monitor":{"type":"monitor","name":"purple-r04-mon","enabled":false,"schedule":{"period":{"interval":10,"unit":"MINUTES"}},"inputs":[{"search":{"indices":["purple-r04"],"query":{"size":0,"query":{"bool":{"filter":[{"term":{"data.audit.parent":"/usr/sbin/apache2"}},{"terms":{"data.audit.exe":["/bin/sh","/bin/bash","/usr/bin/bash","/bin/dash"]}}]}},"aggs":{"by_agent":{"terms":{"field":"agent.name","size":20},"aggs":{"hit":{"bucket_selector":{"buckets_path":{"c":"_count"},"script":"params.c >= 1"}}}}}}}}],"triggers":[{"name":"웹서버 프로세스(apache2)가 셸을 실행한 호스트","severity":"1","condition":{"script":{"source":"ctx.results[0].aggregations.by_agent.buckets.size() > 0","lang":"painless"}},"actions":[]}]}}' | jq -c '.trigger_results | to_entries[] | {name: .value.name, triggered: .value.triggered}'
+    answer_detail: "모니터 = 집계 + 조건 + 주기. 웹서버 프로세스(apache2)가 셸을 실행한 호스트. 결과 버킷이 정답 키와 같으면 트리거 true."
+    expected_output: |2
+      # MON
+      mediforum | 25
+      {"name":"웹서버 프로세스(apache2)가 셸을 실행한 호스트","triggered":true}
+    verify:
+      type: output_contains
+      expect: "triggered"
+      field: stdout
+      semantic:
+        intent: "Alerting 모니터"
+        success_criteria: ["bucket_selector", "triggered true"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 6
+    instruction: |2
+      ## 🎯 목표 — 시그니처·호스트 규칙 — 네트워크·웹·호스트 층에서 같은 것을 잡을 수 있나
+      ## 📖 개념 한 줄
+      집계로 찾은 것을 각 센서의 규칙으로 옮긴다. 서명은 '한 줄·한 요청'에 강하고 분산·장기 패턴에 약하다. 검증은 실제 공격이 아니라 로그에서 재구성한 pcap·HTTP 재생·무해한 표식으로 한다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` (`cd ~/purple-agg`) — `docker cp`/`docker exec` 로 kt66-ips·kt66-web 에 적용
+
+      ```bash
+      # ── Suricata (kt66-ips) — 로그를 패킷으로 재구성해 오프라인 검사, 망에는 보내지 않는다 ──
+      # 1) 규칙 읽기 — msg·threshold·sid 96040xx
+      cat rules/r04/suricata.rules
+
+      # 2) pcap 재구성 (공격 + 같은 시간대 정상 표본)
+      python3 r04_persistence.py pcap
+
+      # 3) ips 컨테이너로 복사
+      docker cp r04.pcap kt66-ips:/tmp/r04.pcap
+      docker cp rules/r04/suricata.rules kt66-ips:/tmp/r04.rules
+
+      # 4) 오프라인 검사 — -S 로 이 규칙만 (운영 룰셋과 섞지 않음)
+      docker exec kt66-ips mkdir -p /tmp/r04-out
+      docker exec kt66-ips suricata -r /tmp/r04.pcap -S /tmp/r04.rules -k none -l /tmp/r04-out
+
+      # 5) 규칙별 경보 수
+      docker exec kt66-ips sh -c "grep -o '\[1:[0-9]*:1\] [^[]*' /tmp/r04-out/fast.log | sort | uniq -c"
+
+      # ── ModSecurity (kt66-web) — 스텁 vhost purple-test.kt66.lab 에서만, 응답은 항상 "ok" ──
+      # 6) 스텁 vhost 설치(최초 1회: R02 에서 했으면 건너뜀) — README §3
+      # 7) 규칙 읽기 — id 904xx, phase·카운터(고정 창)
+      cat rules/r04/modsec.conf
+
+      # 8) 규칙 올리기 + 문법 검사 + 무중단 재적용
+      docker cp rules/r04/modsec.conf kt66-web:/etc/modsecurity/purple/r04.conf
+      docker exec kt66-web apache2ctl -t
+      docker exec kt66-web apache2ctl -k graceful
+
+      # 9) HTTP 재생 파일 만들기 (원래 출발지·상태코드·무해한 본문)
+      python3 r04_persistence.py http
+
+      # 10) 스텁으로 재생 — X-Purple-Client 가 REMOTE_ADDR 로 바뀌어 IP 별 카운터가 실제처럼 돈다
+      python3 rules/common/purple_http_replay.py r04_http.jsonl --host 10.20.32.80
+
+      # 11) 룰 id 별 차단 수
+      docker exec kt66-web sh -c "grep -o 'id \"9[0-9]\{4\}\"' /var/log/apache2/purple_test_error.log | sort | uniq -c"
+
+      # ── osquery (호스트) — 예약 쿼리 팩. 실제 공격이 없으니 결과 [] 가 정상 ──
+      # 12) 쿼리 팩 읽기
+      cat rules/r04/osquery.conf
+
+      # 13) 대표 쿼리를 즉석 실행 (kt66-web) — R04: 업로드 폴더의 스크립트 파일
+      docker exec kt66-web osqueryi --json "SELECT path, size, datetime(mtime,'unixepoch') AS mtime FROM file WHERE path LIKE '/var/www/%/uploads/%%' AND (path LIKE '%.php' OR path LIKE '%.phtml');"
+      ```
+      - Suricata: threshold 는 '서명 한 줄'의 집계다. 분산·장기 패턴은 서명으로 안 잡히는 것이 정상 — 미션 2~5 의 집계와 비교한다.
+      - ModSecurity: 재생은 석 달을 몇 초로 압축한다 → 하루·주 단위 카운터는 부풀려진다. 임계값은 집계(미션 2~4)의 분포로 정한다.
+      - osquery: 운영 배포는 `/etc/osquery/osquery.conf` 의 packs 에 추가 → 결과는 osquery 결과 로그 → Wazuh(osquery 모듈)로 들어온다.
+      - Sysmon: `rules/r04/sysmon.xml` 의 RuleGroup 을 Sysmon 설정(Windows `sysmon64 -c`, Linux `sysmon -c`)에 합친다 — kt66 에 Sysmon 이 없으면 추가 설치 제안(README §6).
+
+      ## ✅ 합격 기준
+      `PURPLE R04` 출력 시 통과.
+    hint: "pcap → suricata -r / http 재생 → ModSec 로그"
+    category: detection
+    points: 12
+    answer: |2
+      python3 r04_persistence.py pcap >/dev/null && docker cp r04.pcap kt66-ips:/tmp/ && docker cp rules/r04/suricata.rules kt66-ips:/tmp/r04.rules && docker exec kt66-ips sh -c 'mkdir -p /tmp/r04-out; suricata -r /tmp/r04.pcap -S /tmp/r04.rules -k none -l /tmp/r04-out >/dev/null 2>&1; grep -o "\[1:[0-9]*:1\] [^[]*" /tmp/r04-out/fast.log | sort | uniq -c'
+      docker cp rules/r04/modsec.conf kt66-web:/etc/modsecurity/purple/r04.conf && docker exec kt66-web apache2ctl -k graceful && python3 r04_persistence.py http >/dev/null && python3 rules/common/purple_http_replay.py r04_http.jsonl --host 10.20.32.80 && docker exec kt66-web sh -c 'grep -o "id \"9[0-9]*\"" /var/log/apache2/purple_test_error.log | sort | uniq -c'
+    answer_detail: "규칙별 경보 수가 아래와 같으면 통과. 0 인 규칙은 이유(표본에 없음·body 없음·창 크기)를 적는다."
+    expected_output: |2
+           25 [1:9604001:1] PURPLE R04 PHP executed from uploads directory
+           15 [1:9604002:1] PURPLE R04 webshell command parameter (c=)
+      재생 426건 → 응답 코드 분포: 200:395, 403:26, 404:3, 500:2
+           25 id "90401"
+            1 id "90402"
+    verify:
+      type: output_contains
+      expect: "PURPLE R04"
+      field: stdout
+      semantic:
+        intent: "시그니처 규칙 검증"
+        success_criteria: ["Suricata 오프라인", "ModSec 스텁", "osquery 즉석"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 7
+    instruction: |2
+      ## 🎯 목표 — Wazuh 복합 이벤트 — 빈도·순서 상관과 Sigma
+      ## 📖 개념 한 줄
+      단건 경보(낮은 레벨)를 쌓아 빈도 규칙(같은 IP·같은 계정·서로 다른 IP)과 순서 규칙(A 뒤 B, 같은 출발지)으로 올린다. Wazuh 의 창은 분·시간·일 — 그보다 긴 체인은 미션 5 의 모니터가 맡는다. Sigma 로 같은 규칙을 도구 중립으로 남긴다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` (`cd ~/purple-agg`) — `docker exec kt66-siem`
+
+      ```bash
+      # 1) 규칙 읽기 — 단건(level 3~6) 위에 빈도(frequency·timeframe)·순서(if_matched_sid) 상관
+      cat rules/r04/wazuh_rules.xml
+
+      # 2) 공통 디코더·재생 입력(최초 1회: R01 에서 했으면 건너뜀) — README §4
+      # 3) 규칙 올리기
+      docker cp rules/r04/wazuh_rules.xml kt66-siem:/var/ossec/etc/rules/purple_r04.xml
+
+      # 4) 문법 검사 — 오류가 없어야 재시작한다
+      docker exec kt66-siem /var/ossec/bin/wazuh-analysisd -t
+
+      # 5) 재시작
+      docker exec kt66-siem /var/ossec/bin/wazuh-control restart
+
+      # 6) 재생 파일 만들기 (공격 + 같은 시간대 정상 표본, 원래 시각 포함)
+      python3 r04_persistence.py replay
+
+      # 7) manager 로 복사 → 시간 간격을 지켜 흘려 넣기 (상관 규칙은 '도착 시각'으로 센다)
+      docker cp r04_replay.jsonl kt66-siem:/tmp/
+      docker cp rules/common/purple_log_replay.py kt66-siem:/tmp/
+      docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r04_replay.jsonl --dry
+      docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r04_replay.jsonl
+
+      # 8) 규칙별 경보 수 — 단건과 상관 규칙이 각각 몇 번 울렸나
+      docker exec kt66-siem sh -c "grep -oE 'Rule: 1904[0-9]+ \(level [0-9]+\)' /var/ossec/logs/alerts/alerts.log | sort | uniq -c"
+
+      # 9) Sigma — kt66 변환기(단건) → 부모 연결(--fix-parents) → 상관 변환
+      cp rules/r04/sigma/*.yml ~/kt66/sigma/rules/
+      python3 ~/kt66/sigma/sigma2wazuh.py ~/kt66/sigma/rules > /tmp/sigma_rules.xml
+      python3 sigma_corr2wazuh.py --fix-parents /tmp/sigma_rules.xml > /tmp/sigma_rules.fixed.xml
+      python3 sigma_corr2wazuh.py ~/kt66/sigma/rules /tmp/sigma_rules.fixed.xml > /tmp/sigma_corr_rules.xml
+      grep -c '<rule ' /tmp/sigma_rules.fixed.xml /tmp/sigma_corr_rules.xml
+      docker cp /tmp/sigma_rules.fixed.xml kt66-siem:/var/ossec/etc/rules/sigma_rules.xml
+      docker cp /tmp/sigma_corr_rules.xml kt66-siem:/var/ossec/etc/rules/sigma_corr_rules.xml
+      ```
+      - 8) N 은 재생 속도·표본에 따라 달라진다 — 단건 규칙이 먼저 울리고, 그 위에 상관 규칙이 '몇 번' 울렸는지를 적는다.
+      - 순서 규칙이 0 이면 `wazuh-logtest` 에 재생 파일의 해당 줄을 붙여 넣어 어느 규칙이 먼저 잡는지(31106·31151 등) 확인하고 if_sid 를 고친다.
+      - Sigma: kt66 변환기는 단건을 최상위 규칙으로 만든다 → 웹·sshd·Suricata 로그에서는 평가되지 않으므로 `--fix-parents` 로 부모를 연결한다.
+
+      ## ✅ 합격 기준
+      `Rule: 1904` 출력 시 통과.
+    hint: "rules → analysisd -t → restart → replay → alerts.log"
+    category: detection
+    points: 15
+    answer: |2
+      docker cp rules/r04/wazuh_rules.xml kt66-siem:/var/ossec/etc/rules/purple_r04.xml && docker exec kt66-siem /var/ossec/bin/wazuh-control restart >/dev/null && python3 r04_persistence.py replay >/dev/null && docker cp r04_replay.jsonl kt66-siem:/tmp/ && docker cp rules/common/purple_log_replay.py kt66-siem:/tmp/ && docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r04_replay.jsonl >/dev/null && docker exec kt66-siem sh -c "grep -oE 'Rule: 1904[0-9]+ \(level [0-9]+\)' /var/ossec/logs/alerts/alerts.log | sort | uniq -c"
+    answer_detail: "Wazuh 규칙: 190401 (L12) PURPLE R04: 업로드 폴더 PHP 호출 $(srcip) $(url) — 웹셸 의심; 190402 (L14) PURPLE R04: 웹셸 호출 뒤 2시간 안에 계정 생성 $(dstuser) — 지속성 확보 [순서 7200s]; 190403 (L12) PURPLE R04: 업로드 폴더에 스크립트 파일 생성 $(file); 190404 (L12) PURPLE R04: 지속성 관련 파일 변경 $(file)"
+    expected_output: |2
+      (형식 — N 은 실행마다 다름)
+      N Rule: 190401 (level 12)
+      N Rule: 190402 (level 14)
+      N Rule: 190403 (level 12)
+      N Rule: 190404 (level 12)
+    verify:
+      type: output_contains
+      expect: "Rule: 1904"
+      field: stdout
+      semantic:
+        intent: "Wazuh 상관 규칙 검증"
+        success_criteria: ["190401", "190402", "190403", "190404"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: siem
+
+  - order: 8
+    instruction: |2
+      ## 🎯 목표 — 대응과 라운드 카드
+      ## 📖 개념 한 줄
+      190401·190403 발생 시 웹셸 파일 격리(이동·해시 기록), 생성 계정 잠금, cron·authorized_keys 원복. purple-ar 은 기록만, 조치는 사람이 확인 후.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` (`cd ~/purple-agg`)
+
+      ```bash
+      # 1) 이 라운드의 액티브 리스폰스 — 어떤 규칙에 무엇을 거나
+      cat rules/r04/wazuh_ar.xml
+
+      # 2) ossec.conf 에 추가 (purple-ar 명령·스크립트는 최초 1회 — README §4)
+      docker cp rules/r04/wazuh_ar.xml kt66-siem:/tmp/r04_ar.xml
+      docker exec kt66-siem sh -c "{ echo '<ossec_config>'; cat /tmp/r04_ar.xml; echo '</ossec_config>'; } >> /var/ossec/etc/ossec.conf"
+      docker exec kt66-siem /var/ossec/bin/wazuh-control restart
+
+      # 3) 재생을 한 번 더 → 대응 기록 확인 (purple-ar 은 '무엇을 했어야 하는지'만 적는다)
+      docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r04_replay.jsonl
+      docker exec kt66-siem tail -5 /var/ossec/logs/purple-ar.log
+
+      # 5) 라운드 카드 — 집계 숫자는 미션 1~5 의 출력에서 옮긴다
+      cat > ~/purple-agg/r04_card.md <<'EOF'
+      # PURPLE-AGG R04 라운드 카드 — 실행·지속성 — 수천 건 속 한 건
+      ## 1. 질문: 수천 건의 정상 업로드·명령 속에서 업로드 폴더의 .php 한 건, apache2→sh 한 쌍을 찾는다
+      ## 2. 데이터: 총 2,457,124건 · 공격 997건 · 정상(배경 포함) 99.959%
+      ## 3. 집계 결과(첫 줄)
+      - Q1 파일 추가(FIM 554): 1_jpg | 871
+      - Q2 auditd: /usr/sbin/cron | /usr/bin/php | 12142
+      - Q3 업로드 폴더의 .php 를 호출한 IP: 70.246.138.5 | 25 | 21
+      - Q4 /etc · /root 아래 파일 변경(FIM)과 계정 생성: mediforum | Integrity checksum changed. | 5
+      - Q5 cron 이 실행한 파일: /usr/bin/php | 12142 | 6 | 08-03 00:05 | 10-31 23:48
+      - Q6 mediforum 침투 첫날 타임라인: 09-22 22:00 | syscheck_new_entry | 1
+      - Q7 웹셸 호출 IP 의 주별 접근 횟수 (장기 잠복): 2026-09-17 | 18
+      ## 4. 규칙: Suricata 96040xx · ModSec 904xx · Wazuh 19040x · Sigma purple-r04-*
+      ## 5. 대응: 190401·190403 발생 시 웹셸 파일 격리(이동·해시 기록), 생성 계정 잠금, cron·authorized_keys 원복. purple-ar 은 기록만, 조치는 사람이 확인 후.
+      ## 6. 놓친 것·다음 라운드: (직접 적는다)
+      EOF
+
+      # 6) 카드 확인
+      cat ~/purple-agg/r04_card.md
+      ```
+      - 대응 대상 규칙: 190401, 190402, 190403, 190404
+      - 재생 IP 는 가상(198.51.100.x·무작위 공인 대역)이다 — 위협 인텔로 공유하지 않는다.
+      - Dashboard: 미션 2~5 의 시각화를 하나의 Dashboard 로 묶어 스크린샷을 카드에 붙인다. ![스크린샷: r04 대시보드](images/r04-dashboard.png)
+
+      ## ✅ 합격 기준
+      `라운드 카드` 출력 시 통과.
+    hint: "wazuh_ar.xml → purple-ar.log → 카드"
+    category: report
+    points: 12
+    answer: |2
+      docker exec kt66-siem tail -3 /var/ossec/logs/purple-ar.log
+      cat > ~/purple-agg/r04_card.md <<'EOF'
+      # PURPLE-AGG R04 라운드 카드 — 실행·지속성 — 수천 건 속 한 건
+      ## 1. 질문: 수천 건의 정상 업로드·명령 속에서 업로드 폴더의 .php 한 건, apache2→sh 한 쌍을 찾는다
+      ## 2. 데이터: 총 2,457,124건 · 공격 997건 · 정상(배경 포함) 99.959%
+      ## 3. 집계 결과(첫 줄)
+      - Q1 파일 추가(FIM 554): 1_jpg | 871
+      - Q2 auditd: /usr/sbin/cron | /usr/bin/php | 12142
+      - Q3 업로드 폴더의 .php 를 호출한 IP: 70.246.138.5 | 25 | 21
+      - Q4 /etc · /root 아래 파일 변경(FIM)과 계정 생성: mediforum | Integrity checksum changed. | 5
+      - Q5 cron 이 실행한 파일: /usr/bin/php | 12142 | 6 | 08-03 00:05 | 10-31 23:48
+      - Q6 mediforum 침투 첫날 타임라인: 09-22 22:00 | syscheck_new_entry | 1
+      - Q7 웹셸 호출 IP 의 주별 접근 횟수 (장기 잠복): 2026-09-17 | 18
+      ## 4. 규칙: Suricata 96040xx · ModSec 904xx · Wazuh 19040x · Sigma purple-r04-*
+      ## 5. 대응: 190401·190403 발생 시 웹셸 파일 격리(이동·해시 기록), 생성 계정 잠금, cron·authorized_keys 원복. purple-ar 은 기록만, 조치는 사람이 확인 후.
+      ## 6. 놓친 것·다음 라운드: (직접 적는다)
+      EOF
+      cat ~/purple-agg/r04_card.md
+    answer_detail: "대응은 규칙→행동의 연결이다. 자동은 기록·알림까지, 계정·호스트 조치는 사람이 확인 후. 카드는 다음 라운드의 입력."
+    expected_output: |2
+      2026-11-01 10:21:07 purple-ar add rule=190401 srcip=… action=quarantine-candidate
+      # PURPLE-AGG R04 라운드 카드 — 실행·지속성 — 수천 건 속 한 건
+      ## 1. 질문: 수천 건의 정상 업로드·명령 속에서 업로드 폴더의 .php 한 건, apache2→sh 한 쌍을 찾는다
+      ## 2. 데이터: 총 2,457,124건 · 공격 997건 · 정상(배경 포함) 99.959%
+      ## 3. 집계 결과(첫 줄)
+      - Q1 파일 추가(FIM 554): 1_jpg | 871
+      - Q2 auditd: /usr/sbin/cron | /usr/bin/php | 12142
+      - Q3 업로드 폴더의 .php 를 호출한 IP: 70.246.138.5 | 25 | 21
+      - Q4 /etc · /root 아래 파일 변경(FIM)과 계정 생성: mediforum | Integrity checksum changed. | 5
+      - Q5 cron 이 실행한 파일: /usr/bin/php | 12142 | 6 | 08-03 00:05 | 10-31 23:48
+      - Q6 mediforum 침투 첫날 타임라인: 09-22 22:00 | syscheck_new_entry | 1
+      - Q7 웹셸 호출 IP 의 주별 접근 횟수 (장기 잠복): 2026-09-17 | 18
+      ## 4. 규칙: Suricata 96040xx · ModSec 904xx · Wazuh 19040x · Sigma purple-r04-*
+      ## 5. 대응: 190401·190403 발생 시 웹셸 파일 격리(이동·해시 기록), 생성 계정 잠금, cron·authorized_keys 원복. purple-ar 은 기록만, 조치는 사람이 확인 후.
+      ## 6. 놓친 것·다음 라운드: (직접 적는다)
+    verify:
+      type: output_contains
+      expect: "라운드 카드"
+      field: stdout
+      semantic:
+        intent: "대응 + 라운드 카드"
+        success_criteria: ["AR 연결", "카드 작성"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host

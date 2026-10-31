@@ -1,0 +1,66 @@
+  · 외부 IP 풀 생성 중 (신규 방문자 1,000,000개)…
+===== R05 권한상승·방어회피 — 끊긴 로그도 신호다 — 정답 키 (기준일 2026-11-01, 기간 90일, scale 1.0, 프로파일 labeling 집계 1개 파일 · 출발지 13,543개) =====
+총 2,457,928건 · 공격 119건 · 정상(배경 포함) 99.995%
+
+# Q0 총 이벤트 수와 서로 다른 외부 출발지 IP 수
+  2457928 | 1048198
+
+# Q1 sudo 사용자 × 결과(rule.id)
+  kim.chaewon | 5402 | 187
+  kim.doyun | 5402 | 186
+  kim.eunwoo | 5402 | 193
+  kim.hajun | 5402 | 154
+  kim.hayun | 5402 | 178
+  kim.jiho | 5402 | 165
+  kim.jimin | 5402 | 191
+  kim.jiwoo | 5402 | 172
+  kim.minjun | 5402 | 192
+  kim.seojun | 5402 | 197
+  kim.seoyeon | 5402 | 174
+  kim.siwoo | 5402 | 194
+  kim.suah | 5402 | 197
+  kim.yejun | 5402 | 182
+  kim.yuna | 5402 | 172
+  www-data | 5401 | 6
+  www-data | 5402 | 1
+
+# Q2 www-data 가 sudo 로 실행하려 한 명령
+  list | 6
+  /usr/bin/find . -exec /bin/sh ; -quit | 1
+
+# Q3 mediforum 이벤트 1시간 단위 — 0건 구간만
+  10-30 01:00 | 0
+  10-30 02:00 | 0
+
+# Q4 실행 파일 경로 — /tmp · /dev/shm 에서 실행된 것
+  /dev/shm/[kworker/u8:2] | root | 91
+
+# Q5 파일 삭제(FIM 553) 경로
+  /var/log/apache2/adminconsole_access.log.8.gz | 90
+  /var/log/apache2/aicompanion_access.log.8.gz | 90
+  /var/log/apache2/govportal_access.log.8.gz | 90
+  /var/log/apache2/juiceshop_access.log.8.gz | 90
+  /var/log/apache2/mediforum_access.log.8.gz | 90
+  /var/log/apache2/neobank_access.log.8.gz | 90
+  /home/www-data/.bash_history | 1
+  /root/.bash_history | 1
+
+# Q6 mediforum 의 root·www-data 명령 (auditd) — 시간순 첫 10줄
+  10-03 03:00 | systemctl stop wazuh-agent
+  10-14 03:03 | systemctl stop wazuh-agent
+  10-23 02:02 | systemctl stop wazuh-agent
+  10-30 00:40 | sudo -l
+  10-30 00:41 | /bin/sh
+  10-30 00:41 | find . -exec /bin/sh ; -quit
+  10-30 00:41 | sudo -l
+  10-30 00:43 | [kworker/u8:2]
+  10-30 00:43 | cp /tmp/.x/update.sh /dev/shm/.k
+  10-30 00:45 | truncate -s 0 /var/log/auth.log
+  10-30 00:47 | rm -f /root/.bash_history /home/www-data/.bash_history
+  10-30 00:48 | sed -i /10.20/d /var/log/apache2/mediforum_access.log
+
+# MON 대량 로그 서버 4대 중 1시간 동안 이벤트 0건이 된 구간
+  mediforum | 10-30 01:00 | 0
+  mediforum | 10-30 02:00 | 0
+
+(계산 42초 · 서로 다른 값 수(cardinality)는 인덱서에선 근사치)

@@ -1,0 +1,3 @@
+      5 [1:9602001:1] PURPLE R02 inbound SYN sweep - 40 SYN/60s from one source
+      2 [1:9602002:1] PURPLE R02 404 storm - 30 not-found responses/120s to one client
+    444 [1:9602003:1] PURPLE R02 hidden neobank API path probe

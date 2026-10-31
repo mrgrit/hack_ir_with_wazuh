@@ -1,0 +1,551 @@
+lab_id: purple-agg-r05
+title: "퍼플 집계 R05 — 권한상승·방어회피 — 끊긴 로그도 신호다"
+version: purple-agg-1
+course: purple-agg
+week: 5
+description: |
+  R05 권한상승·방어회피 — sudo 를 쓰지 않던 계정, /dev/shm 의 [kworker], 그리고 '로그가 끊긴 2시간'.
+
+  Red(로그로만 재현) — mediforum(10.20.40.85), www-data 셸에서
+    1) sudo -l 실패 반복 → find -exec 로 root 셸   2) /dev/shm 에 커널 스레드 이름으로 위장한 프로세스
+    3) auth.log 비우기·history 삭제·wazuh-agent 중지 → 약 2시간 로그 공백   4) 재시작 후 FIM 이 삭제를 보고
+  Blue: sudo 사용자 분포 → www-data 명령 → 10분 단위 0건 구간 → 수상 경로 실행 → 삭제 파일 → 타임라인
+
+  실제 공격은 하지 않는다. 생성기가 만든 로그(정상 99.9% + 공격)를 인덱서에 적재해 집계로 찾고, 같은 판단을 Suricata·ModSecurity·Wazuh·Sigma·osquery 규칙과 모니터로 자동화한 뒤 대응한다. 명령은 한 줄씩 — answer 의 연결 명령은 자동 채점용.
+difficulty: medium
+duration_minutes: 180
+prerequisites:
+  - "kt66 설치·기동 + Wazuh 인덱서 https://10.20.32.110:9200 접근 (admin)"
+  - "~/purple-agg 번들 배치 (README §1~4 최초 설정)"
+  - "jq, python3"
+objectives:
+  - "sudo 사용자×결과 집계로 서비스 계정의 sudo 시도를 찾는다"
+  - "1시간 버킷 Date Histogram(min_doc_count 0)으로 로그 공백 구간을 찾는다"
+  - "/tmp·/dev/shm 실행과 파일 삭제 경로로 방어회피 흔적을 확인한다"
+  - "Wazuh(서비스 계정 sudo·반복 실패·에이전트 끊김)·osquery(위장 프로세스) 규칙과 공백 모니터를 만든다"
+pass_threshold: 0.7
+steps:
+
+  - order: 1
+    instruction: |2
+      ## 🎯 목표 — 데이터 적재와 정상의 모양 — sudo 사용자 × 결과(rule.id)
+      ## 📖 개념 한 줄
+      정상의 크기를 먼저 잰다. sudo 를 쓰는 사람은 정해져 있다(관리자 15명). 목록 밖의 이름이 신호다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # 1) 인덱서 연결 확인 — 클러스터 이름·버전, 이미 있는 purple-* 인덱스
+      python3 r05_privesc_evasion.py check
+
+      # 2) 로그 생성·적재 — 90일, 엔드포인트 10곳 정상 99.9% + 공격 (실제 공격 없음, 수 분)
+      python3 r05_privesc_evasion.py gen --anchor 2026-11-01
+
+      # 3) 적재 건수 확인 — 총 이벤트 수 | 서로 다른 외부 IP 수 (Q0)
+      python3 r05_privesc_evasion.py ask Q0
+
+      # 4) Dashboard: Stack Management → Index Patterns → purple-* (시간 필드 timestamp) — 있으면 건너뜀
+      # 5) Discover 에서 purple-r05 · 기간 2026-08-01 ~ 2026-11-01 로 맞춘다
+
+      # 6) Q1 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r05_privesc_evasion.py dsl Q1
+
+      # 7) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r05/_search -d @- <<'EOF' | jq -r '.aggregations.u.buckets[] | .key as $k | .r.buckets[] | "\($k) | \(.key) | \(.doc_count)"'
+      {"size":0,"query":{"term":{"decoder.name":"sudo"}},"aggs":{"u":{"terms":{"field":"data.srcuser","size":20,"order":{"_key":"asc"}},"aggs":{"r":{"terms":{"field":"rule.id","size":2}}}}}}
+      EOF
+
+      # 8) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r05_privesc_evasion.py ask Q1
+      ```
+      - 2) 기준일 `2026-11-01` 로 고정해야 정답 키와 숫자가 같다(다른 날짜면 분포는 같고 시각만 밀린다).
+      - 시각화: Split rows: Terms `data.srcuser` size 20 · 정렬 _key asc → Split rows: Terms `rule.id` size 2 · 필터 `decoder.name:"sudo"`
+
+      ## ✅ 합격 기준
+      `kim.chaewon` 출력 시 통과.
+    hint: "gen → ask Q0 → Q1"
+    category: survey
+    points: 10
+    answer: |2
+      # 1) 생성·적재 (기준일 고정)
+      python3 r05_privesc_evasion.py gen --anchor 2026-11-01 >/dev/null && python3 r05_privesc_evasion.py ask Q0
+      # 2) 정상의 모양
+      python3 r05_privesc_evasion.py ask Q1
+    answer_detail: "총 2,457,928건 · 공격 119건 · 정상(배경 포함) 99.995% — 정상이 99.9% 인 데이터에서 '정상의 모양'을 먼저 기록한다. sudo 를 쓰는 사람은 정해져 있다(관리자 15명). 목록 밖의 이름이 신호다."
+    expected_output: |2
+      # Q0
+      2457928 | 1048198
+      # Q1
+      kim.chaewon | 5402 | 187
+      kim.doyun | 5402 | 186
+      kim.eunwoo | 5402 | 193
+      kim.hajun | 5402 | 154
+      kim.hayun | 5402 | 178
+      kim.jiho | 5402 | 165
+      kim.jimin | 5402 | 191
+      kim.jiwoo | 5402 | 172
+      kim.minjun | 5402 | 192
+      kim.seojun | 5402 | 197
+      …
+    verify:
+      type: output_contains
+      expect: "kim.chaewon"
+      field: stdout
+      semantic:
+        intent: "적재 + 정상 기준선"
+        success_criteria: ["인덱스 purple-r05", "Q0 건수", "Q1 분포"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 2
+    instruction: |2
+      ## 🎯 목표 — www-data 가 sudo 로 실행하려 한 명령 · mediforum 이벤트 1시간 단위
+      ## 📖 개념 한 줄
+      **Q2** www-data 가 sudo 로 무엇을 하려 했나 — 명령이 곧 의도다.
+      **Q3** 대량 로그 서버가 1시간 동안 0건이면 장애이거나, 누가 에이전트를 껐다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # ── Q2 www-data 가 sudo 로 실행하려 한 명령 ──
+      # 1) Q2 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r05_privesc_evasion.py dsl Q2
+
+      # 2) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r05/_search -d @- <<'EOF' | jq -r '.aggregations.c.buckets[] | "\(.key) | \(.doc_count)"'
+      {"size":0,"query":{"bool":{"filter":[{"term":{"decoder.name":"sudo"}},{"term":{"data.srcuser":"www-data"}}]}},"aggs":{"c":{"terms":{"field":"data.command","size":5}}}}
+      EOF
+
+      # 3) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r05_privesc_evasion.py ask Q2
+
+      # ── Q3 mediforum 이벤트 1시간 단위 — 0건 구간만 ──
+      # 4) Q3 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r05_privesc_evasion.py dsl Q3
+
+      # 5) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r05/_search -d @- <<'EOF' | jq -r '.aggregations.t.buckets[] | "\(.key_as_string) | \(.doc_count)"'
+      {"size":0,"query":{"term":{"agent.name":"mediforum"}},"aggs":{"t":{"date_histogram":{"field":"timestamp","fixed_interval":"1h","time_zone":"+09:00","format":"MM-dd HH:mm","min_doc_count":0},"aggs":{"zero":{"bucket_selector":{"buckets_path":{"c":"_count"},"script":"params.c == 0"}}}}}}
+      EOF
+
+      # 6) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r05_privesc_evasion.py ask Q3
+      ```
+      - Q2 시각화: Split rows: Terms `data.command` size 5 · 필터 `decoder.name:"sudo" and data.srcuser:"www-data"`
+      - Q3 시각화: Split rows: Date Histogram `timestamp` 간격 1h → 조건 거르기(bucket_selector) — Visualize 에는 없음 → DSL·모니터로 · 필터 `agent.name:"mediforum"`
+
+      ## ✅ 합격 기준
+      `10-30 01:00` 출력 시 통과.
+    hint: "Q2 / Q3"
+    category: analysis
+    points: 13
+    answer: |2
+      # Q2 www-data 가 sudo 로 실행하려 한 명령
+      python3 r05_privesc_evasion.py ask Q2
+      # Q3 mediforum 이벤트 1시간 단위 — 0건 구간만
+      python3 r05_privesc_evasion.py ask Q3
+    answer_detail: "Q2: www-data 가 sudo 로 무엇을 하려 했나 — 명령이 곧 의도다. Q3: 대량 로그 서버가 1시간 동안 0건이면 장애이거나, 누가 에이전트를 껐다."
+    expected_output: |2
+      # Q2
+      list | 6
+      /usr/bin/find . -exec /bin/sh ; -quit | 1
+      # Q3
+      10-30 01:00 | 0
+      10-30 02:00 | 0
+    verify:
+      type: output_contains
+      expect: "10-30 01:00"
+      field: stdout
+      semantic:
+        intent: "탐지 집계"
+        success_criteria: ["Q2", "Q3"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 3
+    instruction: |2
+      ## 🎯 목표 — 실행 파일 경로 · 파일 삭제(FIM 553) 경로
+      ## 📖 개념 한 줄
+      **Q4** /tmp·/dev/shm 에서 실행된 파일 — 디스크에 오래 남기지 않으려는 흔적.
+      **Q5** auth.log·bash_history 삭제는 '지우는 행위' 자체가 남는다(FIM 553).
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # ── Q4 실행 파일 경로 — /tmp · /dev/shm 에서 실행된 것 ──
+      # 1) Q4 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r05_privesc_evasion.py dsl Q4
+
+      # 2) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r05/_search -d @- <<'EOF' | jq -r '.aggregations.exe.buckets[] | .key as $k | .u.buckets[] | "\($k) | \(.key) | \(.doc_count)"'
+      {"size":0,"query":{"bool":{"filter":[{"term":{"decoder.name":"auditd"}}],"should":[{"prefix":{"data.audit.exe":"/tmp/"}},{"prefix":{"data.audit.exe":"/dev/shm/"}}],"minimum_should_match":1}},"aggs":{"exe":{"terms":{"field":"data.audit.exe","size":5},"aggs":{"u":{"terms":{"field":"data.audit.auid","size":1}}}}}}
+      EOF
+
+      # 3) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r05_privesc_evasion.py ask Q4
+
+      # ── Q5 파일 삭제(FIM 553) 경로 ──
+      # 4) Q5 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r05_privesc_evasion.py dsl Q5
+
+      # 5) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r05/_search -d @- <<'EOF' | jq -r '.aggregations.p.buckets[] | "\(.key) | \(.doc_count)"'
+      {"size":0,"query":{"term":{"rule.id":"553"}},"aggs":{"p":{"terms":{"field":"syscheck.path","size":8}}}}
+      EOF
+
+      # 6) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r05_privesc_evasion.py ask Q5
+      ```
+      - Q4 시각화: Split rows: Terms `data.audit.exe` size 5 → Split rows: Terms `data.audit.auid` size 1 · 필터 `decoder.name:"auditd" and (data.audit.exe:/tmp/* or data.audit.exe:/dev/shm/*)`
+      - Q5 시각화: Split rows: Terms `syscheck.path` size 8 · 필터 `rule.id:"553"`
+
+      ## ✅ 합격 기준
+      `/var/log/apache2/adminconsole_access.log` 출력 시 통과.
+    hint: "Q4 / Q5"
+    category: analysis
+    points: 13
+    answer: |2
+      # Q4 실행 파일 경로 — /tmp · /dev/shm 에서 실행된 것
+      python3 r05_privesc_evasion.py ask Q4
+      # Q5 파일 삭제(FIM 553) 경로
+      python3 r05_privesc_evasion.py ask Q5
+    answer_detail: "Q4: /tmp·/dev/shm 에서 실행된 파일 — 디스크에 오래 남기지 않으려는 흔적. Q5: auth.log·bash_history 삭제는 '지우는 행위' 자체가 남는다(FIM 553)."
+    expected_output: |2
+      # Q4
+      /dev/shm/[kworker/u8:2] | root | 91
+      # Q5
+      /var/log/apache2/adminconsole_access.log.8.gz | 90
+      /var/log/apache2/aicompanion_access.log.8.gz | 90
+      /var/log/apache2/govportal_access.log.8.gz | 90
+      /var/log/apache2/juiceshop_access.log.8.gz | 90
+      /var/log/apache2/mediforum_access.log.8.gz | 90
+      /var/log/apache2/neobank_access.log.8.gz | 90
+      /home/www-data/.bash_history | 1
+      /root/.bash_history | 1
+    verify:
+      type: output_contains
+      expect: "/var/log/apache2/adminconsole_access.log"
+      field: stdout
+      semantic:
+        intent: "탐지 집계"
+        success_criteria: ["Q4", "Q5"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 4
+    instruction: |2
+      ## 🎯 목표 — mediforum 의 root·www-data 명령 (auditd)
+      ## 📖 개념 한 줄
+      **Q6** root·www-data 명령을 시간순으로 — 권한상승 전후가 한 줄로 이어진다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # ── Q6 mediforum 의 root·www-data 명령 (auditd) — 시간순 첫 10줄 ──
+      # 1) Q6 질의 본문(DSL)을 먼저 읽는다 — 어떤 필터·버킷·지표인가
+      python3 r05_privesc_evasion.py dsl Q6
+
+      # 2) 인덱서에 직접 질의 — jq 로 '키 | 값' 표만 뽑는다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/purple-r05/_search -d @- <<'EOF' | jq -r '.aggregations.t.buckets[] | .key_as_string as $k | .c.buckets[] | "\($k) | \(.key)"' | head -12
+      {"size":0,"query":{"bool":{"filter":[{"term":{"agent.name":"mediforum"}},{"term":{"decoder.name":"auditd"}},{"terms":{"data.audit.auid":["root","www-data"]}}],"must_not":[{"term":{"data.audit.exe":"/usr/bin/php"}}]}},"aggs":{"t":{"date_histogram":{"field":"timestamp","fixed_interval":"1m","time_zone":"+09:00","format":"MM-dd HH:mm","min_doc_count":1},"aggs":{"c":{"terms":{"field":"data.audit.command","size":3}}}}}}
+      EOF
+
+      # 3) 같은 질의를 생성기로 (표 출력, 정답 키와 같은 형식)
+      python3 r05_privesc_evasion.py ask Q6
+      ```
+      - Q6 시각화: Split rows: Date Histogram `timestamp` 간격 1m → Split rows: Terms `data.audit.command` size 3 · 필터 `agent.name:"mediforum" and decoder.name:"auditd" and data.audit.auid:("root" or "www-data") and not data.audit.exe:"/usr/bin/php"`
+
+      ## ✅ 합격 기준
+      `10-03 03:00` 출력 시 통과.
+    hint: "Q6"
+    category: analysis
+    points: 13
+    answer: |2
+      # Q6 mediforum 의 root·www-data 명령 (auditd) — 시간순 첫 10줄
+      python3 r05_privesc_evasion.py ask Q6
+    answer_detail: "Q6: root·www-data 명령을 시간순으로 — 권한상승 전후가 한 줄로 이어진다."
+    expected_output: |2
+      # Q6
+      10-03 03:00 | systemctl stop wazuh-agent
+      10-14 03:03 | systemctl stop wazuh-agent
+      10-23 02:02 | systemctl stop wazuh-agent
+      10-30 00:40 | sudo -l
+      10-30 00:41 | /bin/sh
+      10-30 00:41 | find . -exec /bin/sh ; -quit
+      10-30 00:41 | sudo -l
+      10-30 00:43 | [kworker/u8:2]
+      10-30 00:43 | cp /tmp/.x/update.sh /dev/shm/.k
+      10-30 00:45 | truncate -s 0 /var/log/auth.log
+      …
+    verify:
+      type: output_contains
+      expect: "10-03 03:00"
+      field: stdout
+      semantic:
+        intent: "탐지 집계"
+        success_criteria: ["Q6"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 5
+    instruction: |2
+      ## 🎯 목표 — 지속 탐지 — 모니터: 대량 로그 서버 4대 중 1시간 동안 이벤트 0건이 된 구간
+      ## 📖 개념 한 줄
+      한 번 찾은 집계는 모니터로 만든다. bucket_selector 로 '조건을 넘는 버킷'만 남기고, 버킷이 하나라도 있으면 트리거한다. Wazuh 상관 규칙은 분·시간 창의 기억이지만 모니터는 인덱스 전체(최대 1년)를 다시 센다 — 긴 창은 모니터의 몫이다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` — `ssh ccc@{{TARGET_IP}}` 접속 후 `cd ~/purple-agg` (생성기·인덱서 https://10.20.32.110:9200)
+
+      ```bash
+      # 1) 모니터가 쓸 집계(+bucket_selector 조건)를 읽는다
+      python3 r05_privesc_evasion.py dsl MON
+
+      # 2) 같은 집계를 지금 데이터에 — 조건을 넘는 버킷만 남는다
+      python3 r05_privesc_evasion.py ask MON
+
+      # 3) Alerting 모니터 드라이런(_execute) — 등록하지 않고 트리거 판정만
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/_plugins/_alerting/monitors/_execute -d @- <<'EOF' | jq '.trigger_results | to_entries[] | {name: .value.name, triggered: .value.triggered}'
+      {"monitor":{"type":"monitor","name":"purple-r05-mon","enabled":false,"schedule":{"period":{"interval":10,"unit":"MINUTES"}},"inputs":[{"search":{"indices":["purple-r05"],"query":{"size":0,"query":{"terms":{"agent.name":["juiceshop","neobank","govportal","mediforum"]}},"aggs":{"ag":{"terms":{"field":"agent.name","size":4},"aggs":{"t":{"date_histogram":{"field":"timestamp","fixed_interval":"1h","time_zone":"+09:00","format":"MM-dd HH:mm","min_doc_count":0},"aggs":{"zero":{"bucket_selector":{"buckets_path":{"c":"_count"},"script":"params.c == 0"}}}}}}}}}}],"triggers":[{"name":"대량 로그 서버 4대 중 1시간 동안 이벤트 0건이 된 구간","severity":"1","condition":{"script":{"source":"ctx.results[0].aggregations.ag.buckets.stream().anyMatch(b -> b.t.buckets.size() > 0)","lang":"painless"}},"actions":[]}]}}
+      EOF
+
+      # 4) 등록(비활성) — Dashboard → Alerting → Monitors 에서 보고, 10분 주기로 켜 본다
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' -X POST https://10.20.32.110:9200/_plugins/_alerting/monitors -d @- <<'EOF' | jq -r '._id'
+      {"type":"monitor","name":"purple-r05-mon","enabled":false,"schedule":{"period":{"interval":10,"unit":"MINUTES"}},"inputs":[{"search":{"indices":["purple-r05"],"query":{"size":0,"query":{"terms":{"agent.name":["juiceshop","neobank","govportal","mediforum"]}},"aggs":{"ag":{"terms":{"field":"agent.name","size":4},"aggs":{"t":{"date_histogram":{"field":"timestamp","fixed_interval":"1h","time_zone":"+09:00","format":"MM-dd HH:mm","min_doc_count":0},"aggs":{"zero":{"bucket_selector":{"buckets_path":{"c":"_count"},"script":"params.c == 0"}}}}}}}}}}],"triggers":[{"name":"대량 로그 서버 4대 중 1시간 동안 이벤트 0건이 된 구간","severity":"1","condition":{"script":{"source":"ctx.results[0].aggregations.ag.buckets.stream().anyMatch(b -> b.t.buckets.size() > 0)","lang":"painless"}},"actions":[]}]}
+      EOF
+      ```
+      - 트리거 조건: `ctx.results[0].aggregations.ag.buckets.stream().anyMatch(b -> b.t.buckets.size() > 0)`
+      - 4) 실제 운영에서는 질의에 `range timestamp gte now-1h` 를 더해 최근 구간만 본다(실습 데이터는 과거라 생략).
+
+      ## ✅ 합격 기준
+      `triggered` 출력 시 통과.
+    hint: "dsl MON → ask MON → _execute"
+    category: detection
+    points: 12
+    answer: |2
+      python3 r05_privesc_evasion.py ask MON
+      curl -sk -u admin:SecretPassword -H 'Content-Type: application/json' https://10.20.32.110:9200/_plugins/_alerting/monitors/_execute -d '{"monitor":{"type":"monitor","name":"purple-r05-mon","enabled":false,"schedule":{"period":{"interval":10,"unit":"MINUTES"}},"inputs":[{"search":{"indices":["purple-r05"],"query":{"size":0,"query":{"terms":{"agent.name":["juiceshop","neobank","govportal","mediforum"]}},"aggs":{"ag":{"terms":{"field":"agent.name","size":4},"aggs":{"t":{"date_histogram":{"field":"timestamp","fixed_interval":"1h","time_zone":"+09:00","format":"MM-dd HH:mm","min_doc_count":0},"aggs":{"zero":{"bucket_selector":{"buckets_path":{"c":"_count"},"script":"params.c == 0"}}}}}}}}}}],"triggers":[{"name":"대량 로그 서버 4대 중 1시간 동안 이벤트 0건이 된 구간","severity":"1","condition":{"script":{"source":"ctx.results[0].aggregations.ag.buckets.stream().anyMatch(b -> b.t.buckets.size() > 0)","lang":"painless"}},"actions":[]}]}}' | jq -c '.trigger_results | to_entries[] | {name: .value.name, triggered: .value.triggered}'
+    answer_detail: "모니터 = 집계 + 조건 + 주기. 대량 로그 서버 4대 중 1시간 동안 이벤트 0건이 된 구간. 결과 버킷이 정답 키와 같으면 트리거 true."
+    expected_output: |2
+      # MON
+      mediforum | 10-30 01:00 | 0
+      mediforum | 10-30 02:00 | 0
+      {"name":"대량 로그 서버 4대 중 1시간 동안 이벤트 0건이 된 구간","triggered":true}
+    verify:
+      type: output_contains
+      expect: "triggered"
+      field: stdout
+      semantic:
+        intent: "Alerting 모니터"
+        success_criteria: ["bucket_selector", "triggered true"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 6
+    instruction: |2
+      ## 🎯 목표 — 시그니처·호스트 규칙 — 네트워크·웹·호스트 층에서 같은 것을 잡을 수 있나
+      ## 📖 개념 한 줄
+      집계로 찾은 것을 각 센서의 규칙으로 옮긴다. 서명은 '한 줄·한 요청'에 강하고 분산·장기 패턴에 약하다. 검증은 실제 공격이 아니라 로그에서 재구성한 pcap·HTTP 재생·무해한 표식으로 한다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` (`cd ~/purple-agg`) — `docker cp`/`docker exec` 로 kt66-ips·kt66-web 에 적용
+
+      ```bash
+      # ── osquery (호스트) — 예약 쿼리 팩. 실제 공격이 없으니 결과 [] 가 정상 ──
+      # 1) 쿼리 팩 읽기
+      cat rules/r05/osquery.conf
+
+      # 2) 대표 쿼리를 즉석 실행 (kt66-web) — R05: 커널 스레드처럼 대괄호 이름인데 실행 파일 경로가 있는 프로세스(위장)
+      docker exec kt66-web osqueryi --json "SELECT pid, name, path, cmdline, parent FROM processes WHERE name LIKE '[%' AND path != '';"
+      ```
+      - osquery: 운영 배포는 `/etc/osquery/osquery.conf` 의 packs 에 추가 → 결과는 osquery 결과 로그 → Wazuh(osquery 모듈)로 들어온다.
+      - Sysmon: `rules/r05/sysmon.xml` 의 RuleGroup 을 Sysmon 설정(Windows `sysmon64 -c`, Linux `sysmon -c`)에 합친다 — kt66 에 Sysmon 이 없으면 추가 설치 제안(README §6).
+
+      ## ✅ 합격 기준
+      `[]` 출력 시 통과.
+    hint: "pcap → suricata -r / http 재생 → ModSec 로그"
+    category: detection
+    points: 12
+    answer: |2
+      docker exec kt66-web osqueryi --json "SELECT pid, name, path, cmdline, parent FROM processes WHERE name LIKE '[%' AND path != '';"
+    answer_detail: "규칙별 경보 수가 아래와 같으면 통과. 0 인 규칙은 이유(표본에 없음·body 없음·창 크기)를 적는다."
+    expected_output: |2
+      []
+    verify:
+      type: output_contains
+      expect: "[]"
+      field: stdout
+      semantic:
+        intent: "시그니처 규칙 검증"
+        success_criteria: ["Suricata 오프라인", "ModSec 스텁", "osquery 즉석"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host
+
+  - order: 7
+    instruction: |2
+      ## 🎯 목표 — Wazuh 복합 이벤트 — 빈도·순서 상관과 Sigma
+      ## 📖 개념 한 줄
+      단건 경보(낮은 레벨)를 쌓아 빈도 규칙(같은 IP·같은 계정·서로 다른 IP)과 순서 규칙(A 뒤 B, 같은 출발지)으로 올린다. Wazuh 의 창은 분·시간·일 — 그보다 긴 체인은 미션 5 의 모니터가 맡는다. Sigma 로 같은 규칙을 도구 중립으로 남긴다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` (`cd ~/purple-agg`) — `docker exec kt66-siem`
+
+      ```bash
+      # 1) 규칙 읽기 — 단건(level 3~6) 위에 빈도(frequency·timeframe)·순서(if_matched_sid) 상관
+      cat rules/r05/wazuh_rules.xml
+
+      # 2) 공통 디코더·재생 입력(최초 1회: R01 에서 했으면 건너뜀) — README §4
+      # 3) 규칙 올리기
+      docker cp rules/r05/wazuh_rules.xml kt66-siem:/var/ossec/etc/rules/purple_r05.xml
+
+      # 4) 문법 검사 — 오류가 없어야 재시작한다
+      docker exec kt66-siem /var/ossec/bin/wazuh-analysisd -t
+
+      # 5) 재시작
+      docker exec kt66-siem /var/ossec/bin/wazuh-control restart
+
+      # 6) 재생 파일 만들기 (공격 + 같은 시간대 정상 표본, 원래 시각 포함)
+      python3 r05_privesc_evasion.py replay
+
+      # 7) manager 로 복사 → 시간 간격을 지켜 흘려 넣기 (상관 규칙은 '도착 시각'으로 센다)
+      docker cp r05_replay.jsonl kt66-siem:/tmp/
+      docker cp rules/common/purple_log_replay.py kt66-siem:/tmp/
+      docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r05_replay.jsonl --dry
+      docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r05_replay.jsonl
+
+      # 8) 규칙별 경보 수 — 단건과 상관 규칙이 각각 몇 번 울렸나
+      docker exec kt66-siem sh -c "grep -oE 'Rule: 1905[0-9]+ \(level [0-9]+\)' /var/ossec/logs/alerts/alerts.log | sort | uniq -c"
+
+      # 9) Sigma — kt66 변환기(단건) → 부모 연결(--fix-parents) → 상관 변환
+      cp rules/r05/sigma/*.yml ~/kt66/sigma/rules/
+      python3 ~/kt66/sigma/sigma2wazuh.py ~/kt66/sigma/rules > /tmp/sigma_rules.xml
+      python3 sigma_corr2wazuh.py --fix-parents /tmp/sigma_rules.xml > /tmp/sigma_rules.fixed.xml
+      python3 sigma_corr2wazuh.py ~/kt66/sigma/rules /tmp/sigma_rules.fixed.xml > /tmp/sigma_corr_rules.xml
+      grep -c '<rule ' /tmp/sigma_rules.fixed.xml /tmp/sigma_corr_rules.xml
+      docker cp /tmp/sigma_rules.fixed.xml kt66-siem:/var/ossec/etc/rules/sigma_rules.xml
+      docker cp /tmp/sigma_corr_rules.xml kt66-siem:/var/ossec/etc/rules/sigma_corr_rules.xml
+      ```
+      - 8) N 은 재생 속도·표본에 따라 달라진다 — 단건 규칙이 먼저 울리고, 그 위에 상관 규칙이 '몇 번' 울렸는지를 적는다.
+      - 순서 규칙이 0 이면 `wazuh-logtest` 에 재생 파일의 해당 줄을 붙여 넣어 어느 규칙이 먼저 잡는지(31106·31151 등) 확인하고 if_sid 를 고친다.
+      - Sigma: kt66 변환기는 단건을 최상위 규칙으로 만든다 → 웹·sshd·Suricata 로그에서는 평가되지 않으므로 `--fix-parents` 로 부모를 연결한다.
+
+      ## ✅ 합격 기준
+      `Rule: 1905` 출력 시 통과.
+    hint: "rules → analysisd -t → restart → replay → alerts.log"
+    category: detection
+    points: 15
+    answer: |2
+      docker cp rules/r05/wazuh_rules.xml kt66-siem:/var/ossec/etc/rules/purple_r05.xml && docker exec kt66-siem /var/ossec/bin/wazuh-control restart >/dev/null && python3 r05_privesc_evasion.py replay >/dev/null && docker cp r05_replay.jsonl kt66-siem:/tmp/ && docker cp rules/common/purple_log_replay.py kt66-siem:/tmp/ && docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r05_replay.jsonl >/dev/null && docker exec kt66-siem sh -c "grep -oE 'Rule: 1905[0-9]+ \(level [0-9]+\)' /var/ossec/logs/alerts/alerts.log | sort | uniq -c"
+    answer_detail: "Wazuh 규칙: 190501 (L12) PURPLE R05: 웹 서비스 계정 $(srcuser) 의 sudo 사용 — 권한상승 시도; 190502 (L10) PURPLE R05: 10분에 sudo 실패 3회 이상 $(srcuser) [빈도 3/600s]; 190503 (L10) PURPLE R05: 대량 로그 서버 에이전트 연결 끊김 — 로그 공백(방어회피) 가능성"
+    expected_output: |2
+      (형식 — N 은 실행마다 다름)
+      N Rule: 190501 (level 12)
+      N Rule: 190502 (level 10)
+      N Rule: 190503 (level 10)
+    verify:
+      type: output_contains
+      expect: "Rule: 1905"
+      field: stdout
+      semantic:
+        intent: "Wazuh 상관 규칙 검증"
+        success_criteria: ["190501", "190502", "190503"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: siem
+
+  - order: 8
+    instruction: |2
+      ## 🎯 목표 — 대응과 라운드 카드
+      ## 📖 개념 한 줄
+      190501(서비스 계정 sudo)·190503(에이전트 끊김)은 즉시 담당자 호출. 공백 구간은 다른 센서(IPS·FW)로 메워 그 시간의 행위를 복원한다.
+      ## 💻 실행 명령 (한 줄씩 따라 실행)
+
+      **실습 위치:** `kt66 호스트` (`cd ~/purple-agg`)
+
+      ```bash
+      # 1) 이 라운드의 액티브 리스폰스 — 어떤 규칙에 무엇을 거나
+      cat rules/r05/wazuh_ar.xml
+
+      # 2) ossec.conf 에 추가 (purple-ar 명령·스크립트는 최초 1회 — README §4)
+      docker cp rules/r05/wazuh_ar.xml kt66-siem:/tmp/r05_ar.xml
+      docker exec kt66-siem sh -c "{ echo '<ossec_config>'; cat /tmp/r05_ar.xml; echo '</ossec_config>'; } >> /var/ossec/etc/ossec.conf"
+      docker exec kt66-siem /var/ossec/bin/wazuh-control restart
+
+      # 3) 재생을 한 번 더 → 대응 기록 확인 (purple-ar 은 '무엇을 했어야 하는지'만 적는다)
+      docker exec kt66-siem /var/ossec/framework/python/bin/python3 /tmp/purple_log_replay.py /tmp/r05_replay.jsonl
+      docker exec kt66-siem tail -5 /var/ossec/logs/purple-ar.log
+
+      # 5) 라운드 카드 — 집계 숫자는 미션 1~5 의 출력에서 옮긴다
+      cat > ~/purple-agg/r05_card.md <<'EOF'
+      # PURPLE-AGG R05 라운드 카드 — 권한상승·방어회피 — 끊긴 로그도 신호다
+      ## 1. 질문: www-data 의 sudo, /dev/shm 실행, 그리고 '로그가 0건인 시간' — 사라진 로그도 집계하면 신호다
+      ## 2. 데이터: 총 2,457,928건 · 공격 119건 · 정상(배경 포함) 99.995%
+      ## 3. 집계 결과(첫 줄)
+      - Q1 sudo 사용자 × 결과(rule.id): kim.chaewon | 5402 | 187
+      - Q2 www-data 가 sudo 로 실행하려 한 명령: list | 6
+      - Q3 mediforum 이벤트 1시간 단위: 10-30 01:00 | 0
+      - Q4 실행 파일 경로: /dev/shm/[kworker/u8:2] | root | 91
+      - Q5 파일 삭제(FIM 553) 경로: /var/log/apache2/adminconsole_access.log.8.gz | 90
+      - Q6 mediforum 의 root·www-data 명령 (auditd): 10-03 03:00 | systemctl stop wazuh-agent
+      ## 4. 규칙: Suricata 96050xx · ModSec 905xx · Wazuh 19050x · Sigma purple-r05-*
+      ## 5. 대응: 190501(서비스 계정 sudo)·190503(에이전트 끊김)은 즉시 담당자 호출. 공백 구간은 다른 센서(IPS·FW)로 메워 그 시간의 행위를 복원한다.
+      ## 6. 놓친 것·다음 라운드: (직접 적는다)
+      EOF
+
+      # 6) 카드 확인
+      cat ~/purple-agg/r05_card.md
+      ```
+      - 대응 대상 규칙: 190501, 190503
+      - 재생 IP 는 가상(198.51.100.x·무작위 공인 대역)이다 — 위협 인텔로 공유하지 않는다.
+      - Dashboard: 미션 2~5 의 시각화를 하나의 Dashboard 로 묶어 스크린샷을 카드에 붙인다. ![스크린샷: r05 대시보드](images/r05-dashboard.png)
+
+      ## ✅ 합격 기준
+      `라운드 카드` 출력 시 통과.
+    hint: "wazuh_ar.xml → purple-ar.log → 카드"
+    category: report
+    points: 12
+    answer: |2
+      docker exec kt66-siem tail -3 /var/ossec/logs/purple-ar.log
+      cat > ~/purple-agg/r05_card.md <<'EOF'
+      # PURPLE-AGG R05 라운드 카드 — 권한상승·방어회피 — 끊긴 로그도 신호다
+      ## 1. 질문: www-data 의 sudo, /dev/shm 실행, 그리고 '로그가 0건인 시간' — 사라진 로그도 집계하면 신호다
+      ## 2. 데이터: 총 2,457,928건 · 공격 119건 · 정상(배경 포함) 99.995%
+      ## 3. 집계 결과(첫 줄)
+      - Q1 sudo 사용자 × 결과(rule.id): kim.chaewon | 5402 | 187
+      - Q2 www-data 가 sudo 로 실행하려 한 명령: list | 6
+      - Q3 mediforum 이벤트 1시간 단위: 10-30 01:00 | 0
+      - Q4 실행 파일 경로: /dev/shm/[kworker/u8:2] | root | 91
+      - Q5 파일 삭제(FIM 553) 경로: /var/log/apache2/adminconsole_access.log.8.gz | 90
+      - Q6 mediforum 의 root·www-data 명령 (auditd): 10-03 03:00 | systemctl stop wazuh-agent
+      ## 4. 규칙: Suricata 96050xx · ModSec 905xx · Wazuh 19050x · Sigma purple-r05-*
+      ## 5. 대응: 190501(서비스 계정 sudo)·190503(에이전트 끊김)은 즉시 담당자 호출. 공백 구간은 다른 센서(IPS·FW)로 메워 그 시간의 행위를 복원한다.
+      ## 6. 놓친 것·다음 라운드: (직접 적는다)
+      EOF
+      cat ~/purple-agg/r05_card.md
+    answer_detail: "대응은 규칙→행동의 연결이다. 자동은 기록·알림까지, 계정·호스트 조치는 사람이 확인 후. 카드는 다음 라운드의 입력."
+    expected_output: |2
+      2026-11-01 10:21:07 purple-ar add rule=190501 srcip=… action=quarantine-candidate
+      # PURPLE-AGG R05 라운드 카드 — 권한상승·방어회피 — 끊긴 로그도 신호다
+      ## 1. 질문: www-data 의 sudo, /dev/shm 실행, 그리고 '로그가 0건인 시간' — 사라진 로그도 집계하면 신호다
+      ## 2. 데이터: 총 2,457,928건 · 공격 119건 · 정상(배경 포함) 99.995%
+      ## 3. 집계 결과(첫 줄)
+      - Q1 sudo 사용자 × 결과(rule.id): kim.chaewon | 5402 | 187
+      - Q2 www-data 가 sudo 로 실행하려 한 명령: list | 6
+      - Q3 mediforum 이벤트 1시간 단위: 10-30 01:00 | 0
+      - Q4 실행 파일 경로: /dev/shm/[kworker/u8:2] | root | 91
+      - Q5 파일 삭제(FIM 553) 경로: /var/log/apache2/adminconsole_access.log.8.gz | 90
+      - Q6 mediforum 의 root·www-data 명령 (auditd): 10-03 03:00 | systemctl stop wazuh-agent
+      ## 4. 규칙: Suricata 96050xx · ModSec 905xx · Wazuh 19050x · Sigma purple-r05-*
+      ## 5. 대응: 190501(서비스 계정 sudo)·190503(에이전트 끊김)은 즉시 담당자 호출. 공백 구간은 다른 센서(IPS·FW)로 메워 그 시간의 행위를 복원한다.
+      ## 6. 놓친 것·다음 라운드: (직접 적는다)
+    verify:
+      type: output_contains
+      expect: "라운드 카드"
+      field: stdout
+      semantic:
+        intent: "대응 + 라운드 카드"
+        success_criteria: ["AR 연결", "카드 작성"]
+        acceptable_methods: ["**[OSS] OpenSearch 집계 DSL + Dashboard (권장)**"]
+    target_vm: host

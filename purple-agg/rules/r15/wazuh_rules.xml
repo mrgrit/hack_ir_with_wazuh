@@ -1,0 +1,43 @@
+<!-- R15 (id 1915xx) — 허용 목록(CDB)으로 미끼를 근거와 함께 억제 + 혼합 체인 -->
+<!-- ossec.conf <ruleset> 에 <list>etc/lists/purple-allow-scanner</list> <list>etc/lists/purple-allow-backup</list> 추가 -->
+<group name="purple,purple_r15,">
+  <rule id="191501" level="0">
+    <if_sid>31101,31151,190201</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/purple-allow-scanner</list>
+    <description>PURPLE R15: 허가된 점검업체 $(srcip) — 경보 억제(허용 목록)</description>
+  </rule>
+  <rule id="191502" level="0">
+    <if_sid>190805,86600</if_sid>
+    <field name="src_ip">^10.20.40.83$</field>
+    <field name="dest_ip">^222.164.181.171$</field>
+    <description>PURPLE R15: neobank 정상 백업 업로드 — 억제</description>
+  </rule>
+  <rule id="191503" level="12">
+    <if_sid>5715</if_sid>
+    <srcip>10.20.70.0/24</srcip>
+    <description>PURPLE R15: 사용자 PC $(srcip) 에서 서버로 SSH $(dstuser) — bastion 우회</description>
+    <mitre><id>T1021.004</id></mitre>
+  </rule>
+  <rule id="191504" level="14">
+    <if_group>windows</if_group>
+    <field name="win.system.eventID">^4688$</field>
+    <field name="win.eventdata.parentProcessName" type="pcre2">(?i)\\(WINWORD|EXCEL|POWERPNT)\.EXE$</field>
+    <field name="win.eventdata.newProcessName" type="pcre2">(?i)\\(powershell|cmd|wscript|mshta)\.exe$</field>
+    <description>PURPLE R15: Office 문서가 $(win.eventdata.newProcessName) 실행 — 매크로 초기 침투</description>
+    <mitre><id>T1204.002</id><id>T1059.001</id></mitre>
+    <group>attack,execution,</group>
+  </rule>
+  <rule id="191505" level="13">
+    <if_sid>31100,31103,31104,31105,31106,31108</if_sid>
+    <srcip>10.20.40.87</srcip>
+    <url>^/api/users/export</url>
+    <description>PURPLE R15: AI 서버가 관리콘솔 사용자 내보내기 API 호출 $(url) — 도구 SSRF</description>
+    <mitre><id>T1090</id><id>T1530</id></mitre>
+  </rule>
+  <rule id="191506" level="15" frequency="10" timeframe="120">
+    <if_matched_sid>191505</if_matched_sid>
+    <description>PURPLE R15: 2분에 내보내기 API 10페이지 이상 — 대량 유출 진행</description>
+    <mitre><id>T1530</id></mitre>
+    <group>attack,exfiltration,</group>
+  </rule>
+</group>

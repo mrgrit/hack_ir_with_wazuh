@@ -1,0 +1,6 @@
+<active-response>
+  <command>purple-ar</command>
+  <location>server</location>
+  <rules_id>190802,190804</rules_id>
+</active-response>
+<!-- 대응: kt66-fw 에서 목적지 차단(nft add element inet kt66 c2_block { <ip> }) + 감염 PC 격리 — 미션 8 -->
