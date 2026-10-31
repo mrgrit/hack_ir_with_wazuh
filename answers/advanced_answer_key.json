@@ -1,0 +1,325 @@
+{
+ "actors": {
+  "scanner": {
+   "ips": 40,
+   "docs": 27836
+  },
+  "normal": {
+   "ips": 171,
+   "docs": 15972
+  },
+  "insider": {
+   "ips": 1,
+   "docs": 303
+  },
+  "attacker": {
+   "ips": 6,
+   "docs": 1088
+  }
+ },
+ "event_risk": [
+  {
+   "rule": "31106",
+   "desc": "A web attack returned code 200 (success).",
+   "level": 12,
+   "n": 10,
+   "ips": 5,
+   "foreign": 1.0,
+   "rep": 69,
+   "off": 1.0,
+   "reach": 0.6,
+   "w": 0.74
+  },
+  {
+   "rule": "4151",
+   "desc": "Multiple Firewall drop events from same source.",
+   "level": 10,
+   "n": 15,
+   "ips": 5,
+   "foreign": 1.0,
+   "rep": 69,
+   "off": 0.8,
+   "reach": 0.6,
+   "w": 0.69
+  },
+  {
+   "rule": "86601",
+   "desc": "Suricata: Alert - KT66 Possible nmap SYN scan",
+   "level": 6,
+   "n": 18,
+   "ips": 6,
+   "foreign": 0.83,
+   "rep": 68,
+   "off": 0.83,
+   "reach": 0.67,
+   "w": 0.63
+  },
+  {
+   "rule": "5716",
+   "desc": "sshd: authentication failed.",
+   "level": 5,
+   "n": 408,
+   "ips": 6,
+   "foreign": 1.0,
+   "rep": 66,
+   "off": 1.0,
+   "reach": 0.5,
+   "w": 0.57
+  },
+  {
+   "rule": "5715",
+   "desc": "sshd: authentication success.",
+   "level": 3,
+   "n": 92,
+   "ips": 5,
+   "foreign": 0.13,
+   "rep": 8,
+   "off": 0.27,
+   "reach": 0.8,
+   "w": 0.46
+  },
+  {
+   "rule": "5712",
+   "desc": "sshd: brute force trying to get access to the system. Non existent user.",
+   "level": 10,
+   "n": 159,
+   "ips": 45,
+   "foreign": 1.0,
+   "rep": 68,
+   "off": 0.77,
+   "reach": 0.07,
+   "w": 0.44
+  },
+  {
+   "rule": "31151",
+   "desc": "Multiple web server 400 error codes from same source ip.",
+   "level": 10,
+   "n": 263,
+   "ips": 40,
+   "foreign": 1.0,
+   "rep": 67,
+   "off": 0.72,
+   "reach": 0.0,
+   "w": 0.41
+  },
+  {
+   "rule": "31103",
+   "desc": "SQL injection attempt.",
+   "level": 6,
+   "n": 1754,
+   "ips": 43,
+   "foreign": 1.0,
+   "rep": 68,
+   "off": 0.7,
+   "reach": 0.07,
+   "w": 0.37
+  },
+  {
+   "rule": "4101",
+   "desc": "Firewall drop event.",
+   "level": 5,
+   "n": 18432,
+   "ips": 45,
+   "foreign": 1.0,
+   "rep": 68,
+   "off": 0.72,
+   "reach": 0.07,
+   "w": 0.35
+  },
+  {
+   "rule": "5710",
+   "desc": "sshd: Attempt to login using a non-existent user",
+   "level": 5,
+   "n": 616,
+   "ips": 40,
+   "foreign": 1.0,
+   "rep": 68,
+   "off": 0.76,
+   "reach": 0.0,
+   "w": 0.33
+  },
+  {
+   "rule": "31101",
+   "desc": "Web server 400 error code.",
+   "level": 5,
+   "n": 7618,
+   "ips": 195,
+   "foreign": 0.95,
+   "rep": 64,
+   "off": 0.69,
+   "reach": 0.0,
+   "w": 0.31
+  },
+  {
+   "rule": "31100",
+   "desc": "Access log messages grouped.",
+   "level": 3,
+   "n": 15636,
+   "ips": 171,
+   "foreign": 0.06,
+   "rep": 0,
+   "off": 0.16,
+   "reach": 0.01,
+   "w": 0.07
+  }
+ ],
+ "attackers": {
+  "185.220.158.180": {
+   "n": 234,
+   "days": 8,
+   "hosts": 4,
+   "types": 8,
+   "maxlvl": 12,
+   "off": 1.0,
+   "rep": 92,
+   "country": "Germany",
+   "stages": [
+    "recon",
+    "exploit",
+    "auth",
+    "access"
+   ],
+   "first": "2026-09-09 00:13"
+  },
+  "162.142.241.68": {
+   "n": 232,
+   "days": 8,
+   "hosts": 4,
+   "types": 8,
+   "maxlvl": 12,
+   "off": 0.58,
+   "rep": 8,
+   "country": "United States",
+   "stages": [
+    "recon",
+    "exploit",
+    "auth",
+    "access"
+   ],
+   "first": "2026-09-23 12:41"
+  },
+  "222.186.74.165": {
+   "n": 201,
+   "days": 8,
+   "hosts": 4,
+   "types": 8,
+   "maxlvl": 12,
+   "off": 1.0,
+   "rep": 88,
+   "country": "China",
+   "stages": [
+    "recon",
+    "exploit",
+    "auth",
+    "access"
+   ],
+   "first": "2026-09-25 03:00"
+  },
+  "185.56.193.253": {
+   "n": 199,
+   "days": 5,
+   "hosts": 4,
+   "types": 7,
+   "maxlvl": 12,
+   "off": 1.0,
+   "rep": 76,
+   "country": "Netherlands",
+   "stages": [
+    "recon",
+    "exploit",
+    "auth"
+   ],
+   "first": "2026-08-28 22:58"
+  },
+  "118.123.50.105": {
+   "n": 201,
+   "days": 5,
+   "hosts": 4,
+   "types": 7,
+   "maxlvl": 12,
+   "off": 1.0,
+   "rep": 81,
+   "country": "China",
+   "stages": [
+    "recon",
+    "exploit",
+    "auth"
+   ],
+   "first": "2026-08-19 02:17"
+  }
+ },
+ "top_hours": [
+  {
+   "hour": "08-13(Thu) 18:00",
+   "risk": 5418,
+   "n": 203,
+   "ips": 4,
+   "top_ip": "118.227.140.146"
+  },
+  {
+   "hour": "09-08(Tue) 10:00",
+   "risk": 5000,
+   "n": 210,
+   "ips": 16,
+   "top_ip": "193.142.207.215"
+  },
+  {
+   "hour": "09-27(Sun) 16:00",
+   "risk": 4275,
+   "n": 171,
+   "ips": 8,
+   "top_ip": "185.188.124.97"
+  },
+  {
+   "hour": "10-29(Thu) 17:00",
+   "risk": 4129,
+   "n": 175,
+   "ips": 22,
+   "top_ip": "118.15.24.158"
+  },
+  {
+   "hour": "08-11(Tue) 11:00",
+   "risk": 4103,
+   "n": 159,
+   "ips": 11,
+   "top_ip": "103.7.248.24"
+  },
+  {
+   "hour": "08-06(Thu) 21:00",
+   "risk": 3990,
+   "n": 144,
+   "ips": 2,
+   "top_ip": "103.70.20.216"
+  },
+  {
+   "hour": "09-19(Sat) 15:00",
+   "risk": 3975,
+   "n": 153,
+   "ips": 7,
+   "top_ip": "185.188.124.97"
+  },
+  {
+   "hour": "09-08(Tue) 00:00",
+   "risk": 3789,
+   "n": 141,
+   "ips": 5,
+   "top_ip": "45.248.115.159"
+  },
+  {
+   "hour": "09-29(Tue) 00:00",
+   "risk": 3750,
+   "n": 151,
+   "ips": 6,
+   "top_ip": "103.7.248.24"
+  },
+  {
+   "hour": "08-28(Fri) 06:00",
+   "risk": 3725,
+   "n": 144,
+   "ips": 4,
+   "top_ip": "193.61.182.235"
+  }
+ ],
+ "offhours_risk_share": 0.72,
+ "top_hours_offhours": 7
+}
