@@ -32,6 +32,23 @@ cd ~/purple-agg
 python3 r01_baseline.py check
 ```
 
+### 사전작업 한 방에 (§3·§4 자동) — `kt66-setup.sh`
+
+아래 §3(ModSecurity 스텁 vhost)·§4(Wazuh 디코더·룰·AR·CDB)·인덱스 패턴을 **한 번에 설치/원상복구**한다. 멱등(여러 번 실행해도 안전)이고, `down` 은 ossec.conf 를 **원본과 바이트 단위로 동일하게** 되돌린다(마커 블록만 제거, 소유권 root:wazuh 유지). kt66 에서 실제로 검증함(2026-11-01): `up` 후 `wazuh-analysisd -t` 통과·매니저 정상, `down` 후 설정 원복·매니저 정상.
+
+```bash
+sudo ./kt66-setup.sh up       # 설치 (analysisd -t 검사 통과해야 적용)
+sudo ./kt66-setup.sh status   # 무엇이 적용돼 있는지
+sudo ./kt66-setup.sh down     # 전부 원상복구
+```
+
+적재 데이터(인덱스 purple-rNN)는 설정과 별개다 — `python3 rNN_*.py gen` 으로 넣고 `reset` 으로 지운다. 참고:
+- kt66-web 은 `sites-available` 이 읽기전용 마운트라, 스텁 vhost 를 쓰기 가능한 `conf-enabled/` 에 둔다.
+- 기존 룰 보존을 위해 퍼플 룰은 `etc/rules/purple-rNN.xml` 로 분리하고, ossec.conf 추가는 `<!-- PURPLE-AGG BEGIN/END -->` 마커로 감싼다.
+- §5(Sigma)·§6(Sysmon/osquery)은 기존 `sigma_rules.xml` 을 덮을 수 있어 기본 설치에 포함하지 않는다 — 필요하면 아래 수동 절차로.
+
+> **kt66 배포에 미리 넣기?** 이 설정은 kt66-web·kt66-siem 을 바꾸므로(집계 트랙을 안 쓰는 배포엔 불필요), kt66 기본 `./kt66.sh up` 에 강제로 넣지 않는다. 이 트랙을 쓸 때만 위 `up` 을 한 번 실행하면 된다. 항상 켜 두고 싶으면 kt66 기동 훅에서 이 스크립트의 `up` 을 호출하면 된다.
+
 ## 2. 생성기 명령 (모든 라운드 공통)
 
 | 명령 | 하는 일 |
