@@ -2,10 +2,11 @@
 
 | 모듈 | 내용 | 파일 |
 |---|---|---|
-| Module 01 | Wazuh 위협 탐지 DQL 예시집 — 웹·리눅스·Windows·통합 61개 + osquery 2개, 고급: 90일 로그 상관분석 | [`slides/`](slides/) (PPTX·PDF, 263장) |
+| Module 01 | Wazuh 위협 탐지 DQL 예시집 — 웹·리눅스·Windows·통합 61개 + osquery 2개, 고급: 90일 로그 상관분석 | [`slides/`](slides/) (PPTX·PDF, 726장) |
 
 - 모든 실습을 실습 인프라 [kt66](https://github.com/mrgrit/kt66) 에서 **직접 실행·캡처**했다 (2026-10-31, Wazuh 4.10.0).
-- 슬라이드 구성: 예시마다 ① 공격 실행(터미널 화면 + 구문 풀이) ② SIEM 에서 찾기(클릭·입력 순서 + 결과 읽는 법) 두 장이 붙어 있고, 처음 보는 개념은 개념 슬라이드(SQLi·XSS·Log4Shell·리버스 셸·Sysmon·LSASS·MITRE ATT&CK·osquery …)로 먼저 설명한다.
+- **프로젝터용 재구성**: 글씨를 큼직하게 키우고, 화면 캡처는 한 페이지에 하나씩만 크게 넣어 뒷자리에서도 보이도록 했다. 그래서 한 예시가 개념 → 개요 → 공격 실행 → 검색 준비 → 결과 화면(결과 수·결과 표·펼친 문서) → 읽는 법 순서로 여러 장에 나뉜다.
+- 슬라이드 구성: 예시마다 공격 실행(터미널 화면 + 구문 풀이)과 SIEM 에서 찾기(클릭·입력 순서 + 결과 읽는 법)가 이어지고, 처음 보는 개념은 개념 슬라이드(SQLi·XSS·Log4Shell·리버스 셸·Sysmon·LSASS·MITRE ATT&CK·osquery …)로 먼저 설명한다.
 - 학생은 대시보드에서 직접 클릭·입력한다. 고급편의 집계도 Discover·Visualize·Dev Tools 에서 손으로 한다.
 
 ## 문서

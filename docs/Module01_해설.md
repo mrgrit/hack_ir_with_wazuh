@@ -55,7 +55,7 @@ rule.id:31105 OR data.url:(*\<script* or *%3Cscript* or *onerror* or *javascript
 
 ### 03. 디렉터리 트래버설 / LFI
 
-- **결과**: 1 hits · 인덱스 `wazuh-alerts-*`
+- **결과**: 2 hits · 인덱스 `wazuh-alerts-*`
 - **실행한 명령**
 ```bash
 curl -s -o /dev/null -w "HTTP %{http_code}\n" --path-as-is "http://dvwa.ccc.com/vulnerabilities/fi/?page=../../../../etc/passwd"
@@ -77,7 +77,7 @@ rule.id:31104 OR data.url:(*../* or *..%2F* or *..%5C* or *etc/passwd* or *php\:
 
 ### 04. 웹 스캐너 / 디렉터리 브루트포싱
 
-- **결과**: 1 hits · 인덱스 `wazuh-alerts-*`
+- **결과**: 16 hits · 인덱스 `wazuh-alerts-*`
 - **실행한 명령**
 ```bash
 dirb http://dvwa.ccc.com/ /usr/share/dirb/wordlists/common.txt -S -r 2>&1 | head -12
@@ -231,7 +231,7 @@ data.url:(*%3Bid* or *;id* or *%7Cid* or *%7Ccat* or *whoami* or *cat%20* or *wg
 
 ### 11. 공격이 200으로 성공한 요청
 
-- **결과**: 2 hits · 인덱스 `wazuh-alerts-*`
+- **결과**: 1 hits · 인덱스 `wazuh-alerts-*`
 - **실행한 명령**
 ```bash
 curl -s -o /dev/null -w "HTTP %{http_code}\n" "http://juice.ccc.com/rest/products/search?q=%27))%20UNION%20SELECT%20id,email,password,4,5,6,7,8,9%20FROM%20Users--"
@@ -863,7 +863,7 @@ data.win.system.eventID:4104 AND data.win.eventdata.scriptBlockText:(*Invoke-Mim
 
 ### 43. LSASS 접근 (Sysmon 10, 자격증명 덤프)
 
-- **결과**: 15 hits · 인덱스 `wazuh-archives-*`
+- **결과**: 7 hits · 인덱스 `wazuh-archives-*`
 - **실행한 명령**
 ```bash
 C:\Tools\procdump64.exe -accepteula -ma lsass.exe C:\Windows\Temp\l.dmp
@@ -872,9 +872,9 @@ C:\Tools\procdump64.exe -accepteula -ma lsass.exe C:\Windows\Temp\l.dmp
   - `procdump64.exe -accepteula -ma lsass.exe l.dmp` — lsass.exe(로그인 암호 해시를 들고 있는 프로세스) 메모리 전체(-ma)를 파일로 덤프
 - **DQL**
 ```
-data.win.system.eventID:10 AND data.win.eventdata.targetImage:*lsass.exe AND NOT data.win.eventdata.sourceImage:(*MsMpEng.exe or *csrss.exe or *wininit.exe or *services.exe or *svchost.exe or *lsass.exe)
+data.win.system.eventID:10 AND data.win.eventdata.targetImage:*lsass.exe AND NOT data.win.eventdata.sourceImage:(*MsMpEng.exe or *csrss.exe or *wininit.exe or *services.exe or *svchost.exe or *lsass.exe or *osqueryd.exe)
 ```
-- **원본과 달라진 점**: 인덱스 패턴 wazuh-archives-*. kt66 Sysmon 설정은 LSASS 접근을 기록하도록 보강 (SwiftOnSecurity 기본은 미기록)
+- **원본과 달라진 점**: 인덱스 패턴 wazuh-archives-*. Windows 11 은 LSASS 를 보호 프로세스(RunAsPPL)로 띄워 ProcDump 가 접근 거부로 실패하므로 kt66 설치 스크립트가 RunAsPPL 을 끈다(재부팅 후). sourceImage 제외 목록에 osqueryd.exe 추가(osquery 가 주기적으로 lsass 를 조회). kt66 Sysmon 설정은 LSASS 접근을 기록하도록 보강 (SwiftOnSecurity 기본은 미기록)
 - **읽는 법**
   - Sysmon 10 = 다른 프로세스 메모리 접근. targetImage lsass.exe, sourceImage procdump64.exe
   - grantedAccess 0x1FFFFF(전체)·0x1010 등이 덤프용 권한
