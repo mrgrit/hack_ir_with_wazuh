@@ -11,8 +11,21 @@
 - 슬라이드 구성: 예시마다 공격 실행(터미널 화면 + 구문 풀이)과 SIEM 에서 찾기(클릭·입력 순서 + 결과 읽는 법)가 이어지고, 처음 보는 개념은 개념 슬라이드(SQLi·XSS·Log4Shell·리버스 셸·Sysmon·LSASS·MITRE ATT&CK·osquery …)로 먼저 설명한다.
 - 학생은 대시보드에서 직접 클릭·입력한다. 고급편의 집계도 Discover·Visualize·Dev Tools 에서 손으로 한다.
 
+## 책 시리즈 — 해킹·침해대응 실무 with Wazuh
+
+이 저장소의 모듈을 원천으로 책을 쓴다. 1·2권은 실습별 구성, 3권부터는 공격기법마다 공격 → 개념 → 분석 → 파이썬 모듈 → AI 대응을 한 단원에서 끝내는 종단 구성이다. 전체 계획은 [`docs/집필계획.md`](docs/집필계획.md).
+
+| 권 | 제목 | 상태 | 저장소 |
+|---|---|---|---|
+| 1권 | 시스템 침투와 SIEM 분석 (Module 01 실습 01~30·62) | REV04 마스터링, 1~11장·부록 A | [book_1](https://github.com/mrgrit/hack_ir_with_wazuh_book_1) |
+| 2권 | Windows 침해 탐지와 통합 보안관제 (실습 31~61·63) | REV01 교정본, 492쪽 | [book_2](https://github.com/mrgrit/hack_ir_with_wazuh_book_2) |
+| 3권 | (가제) 공격기법별 탐지와 자동 대응 1 — 리눅스·웹 | 기획 | 미정 |
+| 4권 | (가제) 공격기법별 탐지와 자동 대응 2 — Windows·내부 | 기획 | 미정 |
+| 5권 | (가제) 통합편 — 킬체인·사각지대·무인 관제 | 기획 | 미정 |
+
 ## 문서
 
+- [`docs/집필계획.md`](docs/집필계획.md) — 시리즈 전체 집필 계획 (권별 현황, 3권 이후 종단 단원, 자산 재배치, 정할 것)
 - [`docs/Module01_해설.md`](docs/Module01_해설.md) — 실습별 명령·DQL·결과·원본과 달라진 점·읽는 법, 고급편 정답
 - [`docs/강사_준비.md`](docs/강사_준비.md) — 수업 전 체크리스트 (Windows Defender 해제, 인덱스 패턴, 공격자 VM 도구, 합성 데이터)
 - [`analytics/`](analytics/) — 고급편 합성 데이터 생성기, Dev Tools 집계 쿼리
